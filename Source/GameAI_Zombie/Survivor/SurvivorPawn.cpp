@@ -104,11 +104,6 @@ TArray<FVector> ASurvivorPawn::CalculatePath(const FVector& TargetLocation) cons
 	// 3. Extract the path points
 	if (NavPath && NavPath->IsValid())
 	{
-		// PathPoints is a TArray<FVector> representing each corner/node of the path
-		for (const FVector& Point : NavPath->PathPoints)
-		{
-			// DrawDebugSphere(GetWorld(), Point, 20.0f, 8, FColor::Green, false, .0f);
-		}
 		return NavPath->PathPoints;
 	}
 
