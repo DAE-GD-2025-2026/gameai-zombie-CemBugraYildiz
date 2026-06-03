@@ -8,6 +8,9 @@
 #include "SteeringComponent.h"      
 #include "SeekSteering.h" 
 #include "StudentPerceptor.h"
+#include "Common/InventoryComponent.h"
+#include "Items/BaseItem.h"
+#include "Items/Weapon.h"
 
 UBTTask_AttackTarget::UBTTask_AttackTarget()
 {
@@ -46,49 +49,53 @@ EBTNodeResult::Type UBTTask_AttackTarget::ExecuteTask(UBehaviorTreeComponent& Ow
     
 	if (!Target)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("❌ [ATTACK] No target"));
 		return EBTNodeResult::Failed;
 	}
 
 	if (!HasEnoughAmmo(Pawn))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("❌ [ATTACK] Not enough ammo! Aborting attack."));
 		BlackboardComp->SetValueAsBool(FName("IsInDanger"), true);
 		return EBTNodeResult::Failed;
 	}
 
 	UStudentPerceptor* Perceptor = Pawn->FindComponentByClass<UStudentPerceptor>();
+	float LocalAttackRange = AttackRange;
+	
 	if (Perceptor)
 	{
+		
 		EZombieType ZType = Perceptor->GetZombieType(Target);
 		
 		switch (ZType)
 		{
 			case EZombieType::Heavy:
-				AttackRange = 2000.0f;
-				UE_LOG(LogTemp, Warning, TEXT("🛡️ [ATTACK] Heavy Zombie - Keep distance! (Range: %.0f)"), AttackRange);
+				LocalAttackRange = 2000.0f;
 				break;
 				
 			case EZombieType::Runner:
-				AttackRange = 1200.0f;
-				UE_LOG(LogTemp, Warning, TEXT("⚡ [ATTACK] Runner Zombie - Shoot early! (Range: %.0f)"), AttackRange);
+				LocalAttackRange = 1200.0f;
 				break;
 				
 			case EZombieType::Normal:
-				AttackRange = 1500.0f;
-				UE_LOG(LogTemp, Log, TEXT("🧟 [ATTACK] Normal Zombie - Standard range (Range: %.0f)"), AttackRange);
+				LocalAttackRange = 1500.0f;
 				break;
 				
 			default:
-				AttackRange = 1500.0f;
+				LocalAttackRange = 1500.0f;
 				break;
 		}
 	}
 
 	const FVector TargetLocation = Target->GetActorLocation();
 	const float Distance = FVector::Dist(Pawn->GetActorLocation(), TargetLocation);
+
+	FVector ToTarget = (TargetLocation - Pawn->GetActorLocation()).GetSafeNormal();
+	FRotator TargetRotation = ToTarget.Rotation();
+	TargetRotation.Pitch = 0.0f;
+	TargetRotation.Roll = 0.0f;
+	Pawn->SetActorRotation(TargetRotation);
     
-	if (Distance <= AttackRange)
+	if (Distance <= LocalAttackRange)
 	{
 		AIController->SetFocus(Target);
 		
@@ -99,7 +106,6 @@ EBTNodeResult::Type UBTTask_AttackTarget::ExecuteTask(UBehaviorTreeComponent& Ow
 			SteeringComp->bAutoApplySteering = false;
 		}
         
-		UE_LOG(LogTemp, Warning, TEXT("🔫 [ATTACK] In range (%.1fm), firing!"), Distance);
 		
 		return EBTNodeResult::InProgress;
 	}
@@ -108,13 +114,12 @@ EBTNodeResult::Type UBTTask_AttackTarget::ExecuteTask(UBehaviorTreeComponent& Ow
 		if (bUseSeekSteering)
 		{
 			ApproachUsingSeek(OwnerComp, Target);
-			UE_LOG(LogTemp, Log, TEXT("🎯 [ATTACK] Seeking target (Distance: %.1f)"), Distance);
 		}
 		else
 		{
 			EPathFollowingRequestResult::Type MoveResult = AIController->MoveToLocation(
 				TargetLocation,
-				AttackRange * 0.8f
+				LocalAttackRange * 0.8f
 			);
 			
 			if (MoveResult != EPathFollowingRequestResult::RequestSuccessful)
@@ -150,7 +155,6 @@ void UBTTask_AttackTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* No
 
 	if (!Target)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("❌ [ATTACK] Target lost"));
 		FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
 		return;
 	}
@@ -159,22 +163,26 @@ void UBTTask_AttackTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* No
 
 	if (Distance > AttackRange * 2.0f)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("❌ [ATTACK] Target too far (%.0fm)"), Distance);
 		FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
 		return;
 	}
 
 	if (Distance <= AttackRange)
 	{
+		FVector ToTarget = (Target->GetActorLocation() - Pawn->GetActorLocation()).GetSafeNormal();
+		FRotator TargetRotation = ToTarget.Rotation();
+		TargetRotation.Pitch = 0.0f;
+		TargetRotation.Roll = 0.0f;
+		Pawn->SetActorRotation(TargetRotation);
+    
 		AIController->SetFocus(Target);
-		
+    
 		float CurrentTime = GetWorld()->GetTimeSeconds();
 		
 		if (CurrentTime - LastFireTime >= FireInterval)
 		{
 			if (!HasEnoughAmmo(Pawn))
 			{
-				UE_LOG(LogTemp, Warning, TEXT("❌ [ATTACK] Out of ammo!"));
 				FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
 				return;
 			}
@@ -236,49 +244,52 @@ void UBTTask_AttackTarget::FireWeapon(APawn* Pawn, AActor* Target) const
 		return;
 	}
 
-	UActorComponent* InventoryComp = Pawn->GetComponentByClass(UActorComponent::StaticClass());
+	UInventoryComponent* InventoryComp = Pawn->FindComponentByClass<UInventoryComponent>();
     
 	if (!InventoryComp)
 	{
-		UE_LOG(LogTemp, Error, TEXT("❌ [ATTACK] No InventoryComponent!"));
 		return;
 	}
 
-	UFunction* FireFunc = InventoryComp->FindFunction(FName("Fire"));
-	if (!FireFunc)
-	{
-		FireFunc = InventoryComp->FindFunction(FName("Shoot"));
-	}
-	if (!FireFunc)
-	{
-		FireFunc = InventoryComp->FindFunction(FName("Attack"));
-	}
+	FVector ToTarget = (Target->GetActorLocation() - Pawn->GetActorLocation()).GetSafeNormal();
+	FRotator TargetRotation = ToTarget.Rotation();
+	TargetRotation.Pitch = 0.0f;
+	TargetRotation.Roll = 0.0f;
+	Pawn->SetActorRotation(TargetRotation);
+
+	const TArray<ABaseItem*>& Items = InventoryComp->GetInventory();
     
-	if (!FireFunc)
+	int32 WeaponSlot = -1;
+	AWeapon* EquippedWeapon = nullptr;
+    
+	for (int32 i = 0; i < Items.Num(); i++)
 	{
-		UE_LOG(LogTemp, Error, TEXT("❌ [ATTACK] No Fire/Shoot/Attack function found on InventoryComponent!"));
+		if (Items[i])
+		{
+			AWeapon* Weapon = Cast<AWeapon>(Items[i]);
+			if (Weapon && Weapon->GetValue() > 0) 
+			{
+				WeaponSlot = i;
+				EquippedWeapon = Weapon;
+				break;
+			}
+		}
+	}
+
+	if (WeaponSlot == -1 || !EquippedWeapon)
+	{
 		return;
 	}
 
-	if (FireFunc->NumParms > 0)
+	bool bUsed = InventoryComp->UseItem(WeaponSlot);
+    
+	if (bUsed)
 	{
-		struct FFireParams
-		{
-			AActor* Target;
-		};
-        
-		FFireParams Params;
-		Params.Target = Target;
-        
-		InventoryComp->ProcessEvent(FireFunc, &Params);
-        
-		UE_LOG(LogTemp, Warning, TEXT("💥 [ATTACK] Fired at %s (with target param)"), *Target->GetName());
-	}
-	else
-	{
-		InventoryComp->ProcessEvent(FireFunc, nullptr);
-        
-		UE_LOG(LogTemp, Warning, TEXT("💥 [ATTACK] Fired (auto-aim)"));
+		FString WeaponType = EquippedWeapon->GetClass()->GetName();
+		int32 RemainingAmmo = EquippedWeapon->GetValue();
+		
+		if (EquippedWeapon->GetValue() == 0)
+			InventoryComp->RemoveItem(WeaponSlot);
 	}
 }
 
@@ -289,29 +300,28 @@ bool UBTTask_AttackTarget::HasEnoughAmmo(APawn* Pawn) const
 		return false;
 	}
 
-	UActorComponent* InventoryComp = Pawn->GetComponentByClass(UActorComponent::StaticClass());
-	
-	if (InventoryComp)
+	UInventoryComponent* InventoryComp = Pawn->FindComponentByClass<UInventoryComponent>();
+    
+	if (!InventoryComp)
 	{
-		UFunction* GetAmmoFunc = InventoryComp->FindFunction(FName("GetAmmo"));
-		if (GetAmmoFunc)
-		{
-			struct { float ReturnValue; } Params;
-			InventoryComp->ProcessEvent(GetAmmoFunc, &Params);
-			
-			return (Params.ReturnValue >= MinAmmoToFight);
-		}
+		return false;
+	}
 
-		FProperty* ValueProperty = InventoryComp->GetClass()->FindPropertyByName(FName("Value"));
-		if (ValueProperty)
+	int32 TotalAmmo = 0;
+	const TArray<ABaseItem*>& Items = InventoryComp->GetInventory();
+    
+	for (ABaseItem* Item : Items)
+	{
+		if (Item)
 		{
-			if (FFloatProperty* FloatProp = CastField<FFloatProperty>(ValueProperty))
+			AWeapon* Weapon = Cast<AWeapon>(Item);
+			if (Weapon)
 			{
-				float Ammo = FloatProp->GetPropertyValue_InContainer(InventoryComp);
-				return (Ammo >= MinAmmoToFight);
+				TotalAmmo += Weapon->GetValue();
 			}
 		}
 	}
 
-	return false;
+	bool bHasEnough = (TotalAmmo >= MinAmmoToFight);
+	return bHasEnough;
 }

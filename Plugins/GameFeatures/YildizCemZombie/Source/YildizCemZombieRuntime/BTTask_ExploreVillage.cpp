@@ -15,6 +15,7 @@ UBTTask_ExploreVillage::UBTTask_ExploreVillage()
 
 EBTNodeResult::Type UBTTask_ExploreVillage::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
 {
+    
     AAIController* AIController = OwnerComp.GetAIOwner();
     if (!AIController || !AIController->GetPawn())
     {
@@ -26,7 +27,6 @@ EBTNodeResult::Type UBTTask_ExploreVillage::ExecuteTask(UBehaviorTreeComponent& 
     
     if (!ExpMemory)
     {
-        UE_LOG(LogTemp, Warning, TEXT("❌ [VILLAGE] No ExplorationMemory component"));
         return EBTNodeResult::Failed;
     }
 
@@ -35,8 +35,6 @@ EBTNodeResult::Type UBTTask_ExploreVillage::ExecuteTask(UBehaviorTreeComponent& 
     int32 CurrentClusterIndex = -1;
     if (ExpMemory->IsInsideAnyCluster(CurrentLocation, CurrentClusterIndex))
     {
-        UE_LOG(LogTemp, Warning, TEXT("🏘️ [VILLAGE] Inside cluster %d, exploring..."), CurrentClusterIndex);
-        
         if (ExploreCluster(OwnerComp, CurrentClusterIndex, CurrentLocation))
         {
             return EBTNodeResult::Succeeded;
@@ -61,18 +59,22 @@ EBTNodeResult::Type UBTTask_ExploreVillage::ExecuteTask(UBehaviorTreeComponent& 
             
             if (MoveResult == EPathFollowingRequestResult::RequestSuccessful)
             {
-                UE_LOG(LogTemp, Warning, TEXT("🏘️ [VILLAGE] Moving to village with %d houses"), HouseCount);
                 return EBTNodeResult::Succeeded;
             }
         }
     }
-
-    UE_LOG(LogTemp, Log, TEXT("ℹ️ [VILLAGE] No unexplored villages found"));
     return EBTNodeResult::Failed;
 }
 
 bool UBTTask_ExploreVillage::ExploreCluster(UBehaviorTreeComponent& OwnerComp, int32 ClusterIndex, const FVector& CurrentLocation)
 {
+    float CurrentTime = GetWorld()->GetTimeSeconds();
+    if (CurrentTime - LastExploreTime < MinExploreInterval)
+    {
+        return EBTNodeResult::Failed;
+    }
+    LastExploreTime = CurrentTime;
+    
     AAIController* AIController = OwnerComp.GetAIOwner();
     if (!AIController || !AIController->GetPawn())
     {
@@ -139,8 +141,6 @@ bool UBTTask_ExploreVillage::ExploreCluster(UBehaviorTreeComponent& OwnerComp, i
         
         if (MoveResult == EPathFollowingRequestResult::RequestSuccessful)
         {
-            UE_LOG(LogTemp, Warning, TEXT("🏘️ [VILLAGE] Exploring point in village"));
-            
             if (bMarkAsExploredWhenDone)
             {
                 bool bAllVisited = true;
@@ -165,13 +165,10 @@ bool UBTTask_ExploreVillage::ExploreCluster(UBehaviorTreeComponent& OwnerComp, i
                 if (bAllVisited)
                 {
                     ExpMemory->MarkClusterAsExplored(ClusterIndex);
-                    UE_LOG(LogTemp, Warning, TEXT("✅ [VILLAGE] Village fully explored!"));
                 }
             }
-            
             return true;
         }
     }
-
     return false;
 }

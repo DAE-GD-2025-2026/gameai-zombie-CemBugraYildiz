@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
 #include "Navigation/PathFollowingComponent.h"
+#include "Village/House/House.h"
 
 UBTTask_MoveToSafeHouse::UBTTask_MoveToSafeHouse()
 {
@@ -11,6 +12,7 @@ UBTTask_MoveToSafeHouse::UBTTask_MoveToSafeHouse()
     EnterDistance = 500.0f;
     
     SafeHouseKey.AddObjectFilter(this, GET_MEMBER_NAME_CHECKED(UBTTask_MoveToSafeHouse, SafeHouseKey), AActor::StaticClass());
+    bNotifyTick = true;
 }
 
 EBTNodeResult::Type UBTTask_MoveToSafeHouse::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
@@ -31,7 +33,6 @@ EBTNodeResult::Type UBTTask_MoveToSafeHouse::ExecuteTask(UBehaviorTreeComponent&
     
     if (!SafeHouse)
     {
-        UE_LOG(LogTemp, Warning, TEXT("❌ [SAFE HOUSE] No safe house available"));
         return EBTNodeResult::Failed;
     }
 
@@ -59,22 +60,36 @@ EBTNodeResult::Type UBTTask_MoveToSafeHouse::ExecuteTask(UBehaviorTreeComponent&
         
         if (MoveResult.Code == EPathFollowingRequestResult::RequestSuccessful)
         {
-            UE_LOG(LogTemp, Warning, TEXT("🏠 [SAFE HOUSE] Moving to house (Distance: %.1f)"), Distance);
             return EBTNodeResult::InProgress;
         }
         else
         {
-            UE_LOG(LogTemp, Warning, TEXT("❌ [SAFE HOUSE] Cannot path to house"));
             return EBTNodeResult::Failed;
         }
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("🚪 [SAFE HOUSE] Entering house..."));
-        
         BlackboardComp->SetValueAsBool(FName("IsInsideHouse"), true);
-        
         return EBTNodeResult::Succeeded;
+    }
+}
+
+void UBTTask_MoveToSafeHouse::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
+{
+    AAIController* AIController = OwnerComp.GetAIOwner();
+    if (!AIController || !AIController->GetPawn()) { FinishLatentTask(OwnerComp, EBTNodeResult::Failed); return; }
+
+    UBlackboardComponent* BB = OwnerComp.GetBlackboardComponent();
+    AActor* SafeHouse = BB ? Cast<AActor>(BB->GetValueAsObject(SafeHouseKey.SelectedKeyName)) : nullptr;
+    APawn* Pawn = AIController->GetPawn();
+
+    if (!SafeHouse) { FinishLatentTask(OwnerComp, EBTNodeResult::Failed); return; }
+
+    if (IsInsideHouse(Pawn, SafeHouse))
+    {
+        BB->SetValueAsBool(FName("IsInsideHouse"), true);
+        BB->SetValueAsBool(FName("IsInDanger"), false);
+        FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
     }
 }
 
@@ -85,13 +100,28 @@ bool UBTTask_MoveToSafeHouse::IsInsideHouse(APawn* Pawn, AActor* House) const
         return false;
     }
 
+    AHouse* HouseActor = Cast<AHouse>(House);
+    if (HouseActor)
+    {
+        FHouseBounds Bounds = HouseActor->GetBounds();
+        FVector PawnLoc = Pawn->GetActorLocation();
+        
+        bool bInsideX = FMath::Abs(PawnLoc.X - Bounds.Origin.X) < Bounds.Extent.X;
+        bool bInsideY = FMath::Abs(PawnLoc.Y - Bounds.Origin.Y) < Bounds.Extent.Y;
+        bool bInsideZ = FMath::Abs(PawnLoc.Z - Bounds.Origin.Z) < Bounds.Extent.Z;
+        
+        if (bInsideX && bInsideY && bInsideZ)
+        {
+            return true;
+        }
+    }
+    
     const float Distance = FVector::Dist(Pawn->GetActorLocation(), House->GetActorLocation());
     
-    if (Distance < EnterDistance * 0.5f)
+    if (Distance < EnterDistance * 0.3f) 
     {
         return true;
     }
 
-    
     return false;
 }

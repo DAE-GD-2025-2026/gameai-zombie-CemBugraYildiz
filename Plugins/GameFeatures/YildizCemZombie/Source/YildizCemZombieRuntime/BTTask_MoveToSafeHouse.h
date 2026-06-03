@@ -4,6 +4,8 @@
 #include "BehaviorTree/BTTaskNode.h"
 #include "BTTask_MoveToSafeHouse.generated.h"
 
+class AHouse;
+
 UCLASS()
 class YILDIZCEMZOMBIERUNTIME_API UBTTask_MoveToSafeHouse : public UBTTaskNode
 {
@@ -13,6 +15,7 @@ public:
 	UBTTask_MoveToSafeHouse();
 
 	virtual EBTNodeResult::Type ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
+	virtual void TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
 	FBlackboardKeySelector SafeHouseKey;

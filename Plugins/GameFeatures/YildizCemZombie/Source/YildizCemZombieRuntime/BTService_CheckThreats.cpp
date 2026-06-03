@@ -37,8 +37,8 @@ void UBTService_CheckThreats::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
     const int32 ZombieCount = BlackboardComp->GetValueAsInt(FName("NearbyZombieCount"));
     AActor* NearestZombie = Cast<AActor>(BlackboardComp->GetValueAsObject(FName("NearestZombie")));
     const bool bHasWeapon = BlackboardComp->GetValueAsBool(FName("HasWeapon"));
-    const float CurrentAmmo = BlackboardComp->GetValueAsFloat(FName("CurrentAmmo"));
-    const float CurrentHealth = BlackboardComp->GetValueAsFloat(FName("CurrentHealth"));
+    const int32 CurrentAmmo = BlackboardComp->GetValueAsInt(FName("WeaponAmmo"));  
+    const int32 CurrentHealth = BlackboardComp->GetValueAsInt(FName("CurrentHealth"));  
 
     float NearestZombieDistance = FLT_MAX;
     if (NearestZombie)
@@ -53,13 +53,6 @@ void UBTService_CheckThreats::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
     if (bShouldFlee)
     {
         BlackboardComp->SetValueAsBool(FName("IsInDanger"), true);
-        
-        UE_LOG(LogTemp, Warning, TEXT("⚠️ [THREAT] FLEE MODE: Zombies=%d, Distance=%.0f, HasWeapon=%s, Ammo=%.0f, Health=%.0f"), 
-            ZombieCount, 
-            NearestZombieDistance, 
-            bHasWeapon ? TEXT("Yes") : TEXT("No"),
-            CurrentAmmo,
-            CurrentHealth);
     }
     else if (ZombieCount == 0)
     {
@@ -67,39 +60,20 @@ void UBTService_CheckThreats::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
     }
 }
 
-bool UBTService_CheckThreats::ShouldFleeFromZombies(int32 ZombieCount, float NearestZombieDistance, bool bHasWeapon, float CurrentAmmo, float CurrentHealth) const
+bool UBTService_CheckThreats::ShouldFleeFromZombies(int32 ZombieCount, float NearestZombieDistance, bool bHasWeapon, int32 CurrentAmmo, int32 CurrentHealth) const
 {
-    if (CurrentHealth < LowHealthThreshold && NearestZombieDistance < 1200.0f)
-    {
-        UE_LOG(LogTemp, Error, TEXT("💔 [THREAT] Critical health + nearby zombie!"));
-        return true;
-    }
+    if (bHasWeapon && CurrentAmmo > 0)
+        return false;
 
-    if (!bHasWeapon && NearestZombieDistance < 1200.0f)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("🔫 [THREAT] No weapon + nearby zombie!"));
+    float EffectiveThreatDistance = bHasWeapon ? CriticalThreatDistance : 1200.0f;
+    if (NearestZombieDistance < EffectiveThreatDistance)
         return true;
-    }
 
-    if (bHasWeapon && CurrentAmmo < LowAmmoThreshold && NearestZombieDistance < 1000.0f)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("🔫 [THREAT] Low ammo!"));
+    if (!bHasWeapon && ZombieCount >= MaxZombiesBeforeFlee && NearestZombieDistance < 1500.0f)
         return true;
-    }
 
-    if (ZombieCount >= MaxZombiesBeforeFlee)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("🧟 [THREAT] Too many zombies (%d >= %d)!"), 
-            ZombieCount, MaxZombiesBeforeFlee);
+    if (CurrentHealth <= 2 && NearestZombieDistance < 1200.0f)
         return true;
-    }
-
-    if (NearestZombieDistance < CriticalThreatDistance)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("⚠️ [THREAT] Critical distance (%.0fm < %.0fm)!"), 
-            NearestZombieDistance, CriticalThreatDistance);
-        return true;
-    }
 
     return false;
 }

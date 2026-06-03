@@ -4,6 +4,11 @@
 #include "BehaviorTree/BTTaskNode.h"
 #include "BTTask_FleeFromDanger.generated.h"
 
+struct FFleeTaskMemory
+{
+	float TaskStartTime;
+};
+
 UCLASS()
 class YILDIZCEMZOMBIERUNTIME_API UBTTask_FleeFromDanger : public UBTTaskNode
 {
@@ -14,6 +19,10 @@ public:
 
 	virtual EBTNodeResult::Type ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
 	virtual void TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) override;
+	virtual uint16 GetInstanceMemorySize() const override 
+	{ 
+		return sizeof(FFleeTaskMemory); 
+	}
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
 	FBlackboardKeySelector DangerActorKey;

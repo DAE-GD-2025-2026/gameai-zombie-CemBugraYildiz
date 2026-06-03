@@ -4,13 +4,15 @@
 #include "GameFramework/Actor.h"
 #include "Components/ActorComponent.h"
 #include "Navigation/PathFollowingComponent.h"
+#include "Common/InventoryComponent.h"
+#include "Items/BaseItem.h"
 
 UBTTask_GrabItem::UBTTask_GrabItem()
 {
     NodeName = TEXT("Grab Item");
     GrabDistance = 300.0f;
     
-    bNotifyTick = false; 
+    bNotifyTick = true; 
 }
 
 EBTNodeResult::Type UBTTask_GrabItem::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
@@ -18,7 +20,6 @@ EBTNodeResult::Type UBTTask_GrabItem::ExecuteTask(UBehaviorTreeComponent& OwnerC
     AAIController* AIController = OwnerComp.GetAIOwner();
     if (!AIController || !AIController->GetPawn())
     {
-        UE_LOG(LogTemp, Warning, TEXT("❌ [GRAB] No AI Controller or Pawn"));
         return EBTNodeResult::Failed;
     }
 
@@ -32,91 +33,72 @@ EBTNodeResult::Type UBTTask_GrabItem::ExecuteTask(UBehaviorTreeComponent& OwnerC
     
     if (!TargetItem)
     {
-        UE_LOG(LogTemp, Log, TEXT("ℹ️ [GRAB] No best item available"));
         return EBTNodeResult::Failed;
     }
 
+    FGrabItemTaskMemory* Memory = CastInstanceNodeMemory<FGrabItemTaskMemory>(NodeMemory);
+    Memory->CachedTarget = TargetItem;
+    Memory->TaskStartTime = GetWorld()->GetTimeSeconds();
     APawn* Pawn = AIController->GetPawn();
     const float Distance = FVector::Dist(Pawn->GetActorLocation(), TargetItem->GetActorLocation());
     
-    FString ClassName = TargetItem->GetClass()->GetName();
-    bool bIsGarbage = ClassName.Contains(TEXT("Garbage"));
 
     if (Distance <= GrabDistance)
     {
-        if (bIsGarbage)
-        {
-            TargetItem->Destroy();
-            BlackboardComp->ClearValue(FName("BestItem"));
-            
-            UE_LOG(LogTemp, Warning, TEXT("🗑️ [GRAB] Garbage removed to clear spawn point: %s"), 
-                *TargetItem->GetName());
-            
-            return EBTNodeResult::Succeeded; 
-        }
-
-        UActorComponent* InventoryComp = Pawn->GetComponentByClass(UActorComponent::StaticClass());
+        UInventoryComponent* InventoryComp = Pawn->FindComponentByClass<UInventoryComponent>();
         
         if (!InventoryComp)
         {
-            UE_LOG(LogTemp, Error, TEXT("❌ [GRAB] No component found on Pawn!"));
             BlackboardComp->ClearValue(FName("BestItem"));
-            return EBTNodeResult::Failed; 
+            return EBTNodeResult::Failed;
         }
 
-        bool bInteractSucceeded = false;
+        ABaseItem* Item = Cast<ABaseItem>(TargetItem);
+        
+        if (!Item)
+        {
+            BlackboardComp->ClearValue(FName("BestItem"));
+            return EBTNodeResult::Failed;
+        }
 
-        UFunction* InteractFunc = InventoryComp->FindFunction(FName("Interact"));
-        if (InteractFunc)
+        if (Item->GetItemType() == EItemType::Garbage)
         {
-            struct FInteractParams
-            {
-                AActor* Item;
-            };
+            Item->Destroy();
+            BlackboardComp->ClearValue(FName("BestItem"));
             
-            FInteractParams Params;
-            Params.Item = TargetItem;
-            
-            InventoryComp->ProcessEvent(InteractFunc, &Params);
-            bInteractSucceeded = true;
-            
-            UE_LOG(LogTemp, Warning, TEXT("✅ [GRAB] Item picked up via Interact: %s"), 
-                *TargetItem->GetName());
+            return EBTNodeResult::Succeeded;
         }
-        else
+
+        int32 EmptySlot = FindEmptySlot(InventoryComp);
+        
+        if (EmptySlot == -1)
         {
-            UFunction* GrabFunc = InventoryComp->FindFunction(FName("GrabItem"));
-            if (GrabFunc)
-            {
-                struct FGrabParams
-                {
-                    AActor* Item;
-                };
-                
-                FGrabParams Params;
-                Params.Item = TargetItem;
-                
-                InventoryComp->ProcessEvent(GrabFunc, &Params);
-                bInteractSucceeded = true;
-                
-                UE_LOG(LogTemp, Warning, TEXT("✅ [GRAB] Item picked up via GrabItem: %s"), 
-                    *TargetItem->GetName());
-            }
-            else
-            {
-                UE_LOG(LogTemp, Error, TEXT("❌ [GRAB] No Interact/GrabItem function found!"));
-            }
+            BlackboardComp->ClearValue(FName("BestItem"));
+            return EBTNodeResult::Failed;
         }
+
+        bool bSuccess = InventoryComp->GrabItem(EmptySlot, Item);
         
-        BlackboardComp->ClearValue(FName("BestItem"));
-        
-        if (bInteractSucceeded)
+        if (bSuccess)
         {
+            FString ItemTypeName;
+            switch (Item->GetItemType())
+            {
+                case EItemType::Medkit: ItemTypeName = TEXT("Medkit"); break;
+                case EItemType::Food: ItemTypeName = TEXT("Food"); break;
+                case EItemType::Pistol: ItemTypeName = TEXT("Pistol"); break;
+                case EItemType::Shotgun: ItemTypeName = TEXT("Shotgun"); break;
+                default: ItemTypeName = TEXT("Unknown"); break;
+            }
+            
+            
+            BlackboardComp->ClearValue(FName("BestItem"));
             return EBTNodeResult::Succeeded;
         }
         else
         {
-            return EBTNodeResult::Failed; 
+            BlackboardComp->ClearValue(FName("BestItem"));
+            return EBTNodeResult::Failed;
         }
     }
     else 
@@ -128,16 +110,125 @@ EBTNodeResult::Type UBTTask_GrabItem::ExecuteTask(UBehaviorTreeComponent& OwnerC
         
         if (MoveResult.Code == EPathFollowingRequestResult::RequestSuccessful)
         {
-            UE_LOG(LogTemp, Log, TEXT("🚶 [GRAB] Moving to item: %s (Distance: %.1f)"), 
-                *TargetItem->GetName(), Distance);
             
-            return EBTNodeResult::InProgress; 
+            return EBTNodeResult::InProgress;
         }
         else
         {
-            UE_LOG(LogTemp, Warning, TEXT("❌ [GRAB] Failed to move to item"));
-            return EBTNodeResult::Failed; 
+            return EBTNodeResult::Failed;
         }
     }
+}
 
+void UBTTask_GrabItem::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
+{
+    AAIController* AIController = OwnerComp.GetAIOwner();
+    if (!AIController || !AIController->GetPawn())
+    {
+        FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+        return;
+    }
+
+    UBlackboardComponent* BlackboardComp = OwnerComp.GetBlackboardComponent();
+    /*if (!BlackboardComp)
+    {
+        FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+        return;
+    }*/
+
+    FGrabItemTaskMemory* Memory = CastInstanceNodeMemory<FGrabItemTaskMemory>(NodeMemory);
+    AActor* TargetItem = Memory->CachedTarget.Get();
+    APawn* Pawn = AIController->GetPawn();
+
+    /*if (!TargetItem || !TargetItem->IsValidLowLevel())
+    {
+        FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+        return;
+    }*/
+
+    const float Distance = FVector::Dist(Pawn->GetActorLocation(), TargetItem->GetActorLocation());
+    float CurrentTime = GetWorld()->GetTimeSeconds();
+    float ElapsedTime = CurrentTime - Memory->TaskStartTime;
+
+    if (ElapsedTime > 8.0f)
+    {
+        BlackboardComp->ClearValue(FName("BestItem"));
+        FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+        return;
+    }
+
+    if (Distance > GrabDistance)
+    {
+        float PawnSpeed = Pawn->GetVelocity().Size();
+        if (PawnSpeed < 10.0f && ElapsedTime > 2.0f)
+        {
+            BlackboardComp->ClearValue(FName("BestItem"));
+            FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+            return;
+        }
+        return;
+    }
+
+    UInventoryComponent* InventoryComp = Pawn->FindComponentByClass<UInventoryComponent>();
+    if (!InventoryComp)
+    {
+        BlackboardComp->ClearValue(FName("BestItem"));
+        FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+        return;
+    }
+
+    ABaseItem* Item = Cast<ABaseItem>(TargetItem);
+    if (!Item)
+    {
+        BlackboardComp->ClearValue(FName("BestItem"));
+        FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+        return;
+    }
+
+    if (Item->GetItemType() == EItemType::Garbage)
+    {
+        Item->Destroy();
+        BlackboardComp->ClearValue(FName("BestItem"));
+        FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
+        return;
+    }
+
+    int32 EmptySlot = FindEmptySlot(InventoryComp);
+    if (EmptySlot == -1)
+    {
+        BlackboardComp->ClearValue(FName("BestItem"));
+        FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+        return;
+    }
+
+    if (InventoryComp->GrabItem(EmptySlot, Item))
+    {
+        BlackboardComp->ClearValue(FName("BestItem"));
+        FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
+    }
+    else
+    {
+        BlackboardComp->ClearValue(FName("BestItem"));
+        FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+    }
+}
+
+int32 UBTTask_GrabItem::FindEmptySlot(UInventoryComponent* InventoryComp) const
+{
+    if (!InventoryComp)
+    {
+        return -1;
+    }
+
+    const TArray<ABaseItem*>& Items = InventoryComp->GetInventory();
+    
+    for (int32 i = 0; i < Items.Num(); i++)
+    {
+        if (Items[i] == nullptr)
+        {
+            return i;
+        }
+    }
+    
+    return -1; 
 }

@@ -25,4 +25,8 @@ public:
 
 private:
 	bool ExploreCluster(UBehaviorTreeComponent& OwnerComp, int32 ClusterIndex, const FVector& CurrentLocation);
+	UPROPERTY(EditAnywhere, Category = "Exploration")
+	float MinExploreInterval = 12.0f;
+
+	float LastExploreTime = 0.0f;
 };

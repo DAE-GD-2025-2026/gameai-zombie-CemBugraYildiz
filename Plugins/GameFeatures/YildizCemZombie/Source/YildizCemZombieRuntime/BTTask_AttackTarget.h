@@ -4,6 +4,10 @@
 #include "BehaviorTree/BTTaskNode.h"
 #include "BTTask_AttackTarget.generated.h"
 
+class UInventoryComponent;
+class ABaseItem;
+class AWeapon;
+
 UCLASS()
 class YILDIZCEMZOMBIERUNTIME_API UBTTask_AttackTarget : public UBTTaskNode
 {

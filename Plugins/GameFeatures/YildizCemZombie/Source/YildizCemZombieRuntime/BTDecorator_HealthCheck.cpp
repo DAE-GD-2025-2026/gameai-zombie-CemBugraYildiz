@@ -16,36 +16,37 @@ bool UBTDecorator_HealthCheck::CalculateRawConditionValue(UBehaviorTreeComponent
 		return false;
 	}
 
-	const float CurrentHealth = BlackboardComp->GetValueAsFloat(HealthKey.SelectedKeyName);
-	
+	float CurrentHealth = 0.0f;
+    
+	if (HealthKey.SelectedKeyName == FName("CurrentHealth"))
+	{
+		int32 HealthInt = BlackboardComp->GetValueAsInt(HealthKey.SelectedKeyName);
+		CurrentHealth = (float)HealthInt;
+	}
+	else
+	{
+		CurrentHealth = BlackboardComp->GetValueAsFloat(HealthKey.SelectedKeyName);
+	}
+    
 	bool bResult = false;
-	
+    
 	switch (ComparisonType)
 	{
 	case EHealthComparison::Less:
 		bResult = (CurrentHealth < HealthThreshold);
 		break;
-			
+        
 	case EHealthComparison::LessOrEqual:
 		bResult = (CurrentHealth <= HealthThreshold);
 		break;
-			
+        
 	case EHealthComparison::Greater:
 		bResult = (CurrentHealth > HealthThreshold);
 		break;
-			
+        
 	case EHealthComparison::GreaterOrEqual:
 		bResult = (CurrentHealth >= HealthThreshold);
 		break;
 	}
-	
-	if (bResult)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("❤️ [HEALTH CHECK] Health %.1f %s %.1f = TRUE"), 
-			CurrentHealth, 
-			ComparisonType == EHealthComparison::Less ? TEXT("<") : TEXT(">"),
-			HealthThreshold);
-	}
-	
 	return bResult;
 }

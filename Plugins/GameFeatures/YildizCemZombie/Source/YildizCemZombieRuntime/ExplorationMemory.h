@@ -104,6 +104,20 @@ public:
 
 	FHouseCluster* GetClusterByIndex(int32 Index);
 	const TArray<FHouseCluster>& GetHouseClusters() const { return HouseClusters; }
+	
+	UFUNCTION(BlueprintCallable, Category = "Exploration")
+	int32 GetVisitedLocationCount() const { return VisitedLocations.Num(); }
+
+	UFUNCTION(BlueprintCallable, Category = "Exploration")
+	int32 GetTotalVisitCount() const
+	{
+		int32 Total = 0;
+		for (const FVisitedLocation& Loc : VisitedLocations)
+		{
+			Total += Loc.VisitCount;
+		}
+		return Total;
+	}
 
 protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Exploration")

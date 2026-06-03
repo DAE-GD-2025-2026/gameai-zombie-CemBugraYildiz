@@ -4,7 +4,7 @@
 UBTDecorator_CheckAmmo::UBTDecorator_CheckAmmo()
 {
 	NodeName = TEXT("Check Ammo");
-	MinAmmo = 5.0f;
+	MinAmmo = 5;
 }
 
 bool UBTDecorator_CheckAmmo::CalculateRawConditionValue(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) const
@@ -15,14 +15,9 @@ bool UBTDecorator_CheckAmmo::CalculateRawConditionValue(UBehaviorTreeComponent& 
 		return false;
 	}
 
-	const float CurrentAmmo = BlackboardComp->GetValueAsFloat(AmmoKey.SelectedKeyName);
-	
+	const int32 CurrentAmmo = BlackboardComp->GetValueAsInt(AmmoKey.SelectedKeyName);
+    
 	const bool bHasEnoughAmmo = (CurrentAmmo >= MinAmmo);
-	
-	if (!bHasEnoughAmmo)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("🔫 [AMMO CHECK] Low ammo: %.0f < %.0f"), CurrentAmmo, MinAmmo);
-	}
-	
+    
 	return bHasEnoughAmmo;
 }

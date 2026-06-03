@@ -10,9 +10,7 @@ public class YildizCemZombieRuntime : ModuleRules
 		
 		PublicIncludePaths.AddRange(
 			new string[] {
-				"GameAI_Zombie/Items",          
-				"GameAI_Zombie/Zombies",         
-				"GameAI_Zombie"
+				
 				// ... add public include paths required here ...
 			}
 			);

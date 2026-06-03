@@ -4,8 +4,13 @@
 #include "Perception/AIPerceptionComponent.h"
 #include "GameFramework/Actor.h"
 #include "EngineUtils.h"
-#include "Items/ItemType.h"
 #include "ExplorationMemory.h"
+#include "Common/HealthComponent.h"
+#include "Common/StaminaComponent.h"
+#include "Common/InventoryComponent.h"
+#include "Items/BaseItem.h"
+#include "Zombies/BaseZombie.h"
+#include "Village/House/House.h"
 
 UStudentPerceptor::UStudentPerceptor()
 {
@@ -30,6 +35,7 @@ void UStudentPerceptor::BeginPlay()
             UE_LOG(LogTemp, Warning, TEXT("✅ [EXPLORATION] ExplorationMemory component created"));
         }
     }
+    if (!OwnerPawn) return;
     
     AAIController* AIController = Cast<AAIController>(OwnerPawn->GetController());
     if (!AIController)
@@ -72,9 +78,10 @@ void UStudentPerceptor::TickComponent(float DeltaTime, ELevelTick TickType,
         }
     }
     
-    if (ExplorationMemory && PerceivedHouses.Num() > 0)
+    if (ExplorationMemory && PerceivedHouses.Num() != LastPerceivedHouseCount)
     {
         ExplorationMemory->UpdateHouseClusters(PerceivedHouses);
+        LastPerceivedHouseCount = PerceivedHouses.Num();
     }
     
     if (ExplorationMemory)
@@ -105,48 +112,24 @@ void UStudentPerceptor::ManualScan()
     PerceivedHouses.Empty();
     PerceivedPurgeZones.Empty();
 
-    for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+
+    for (TActorIterator<ABaseZombie> It(GetWorld()); It; ++It)
     {
-        AActor* Actor = *It;
-        
-        if (!Actor || Actor == OwnerPawn)
-        {
-            continue;
-        }
-
-        const float Distance = FVector::Dist(PawnLocation, Actor->GetActorLocation());
-        if (Distance > ScanRadius)
-        {
-            continue;
-        }
-
-        FString ClassName = Actor->GetClass()->GetName();
-        
-        if (IsActorType(Actor, TEXT("Zombie")))
-        {
-            PerceivedZombies.Add(Actor);
-        }
-        else if (IsActorType(Actor, TEXT("Food")) || 
-                 IsActorType(Actor, TEXT("Medkit")) || 
-                 IsActorType(Actor, TEXT("Pistol")) || 
-                 IsActorType(Actor, TEXT("Shotgun")) || 
-                 IsActorType(Actor, TEXT("Garbage")))
-        {
-            PerceivedItems.Add(Actor);
-        }
-        else if (IsActorType(Actor, TEXT("House")))
-        {
-            PerceivedHouses.Add(Actor);
-        }
-        else if (IsActorType(Actor, TEXT("PurgeZone")))
-        {
-            PerceivedPurgeZones.Add(Actor);
-        }
+        if (FVector::Dist(PawnLocation, It->GetActorLocation()) <= ScanRadius)
+            PerceivedZombies.Add(*It);
     }
 
-    UE_LOG(LogTemp, Log, TEXT("🔍 [SCAN] Z:%d | I:%d | H:%d | P:%d"),
-        PerceivedZombies.Num(), PerceivedItems.Num(), 
-        PerceivedHouses.Num(), PerceivedPurgeZones.Num());
+    for (TActorIterator<ABaseItem> It(GetWorld()); It; ++It)
+    {
+        if (FVector::Dist(PawnLocation, It->GetActorLocation()) <= ScanRadius)
+            PerceivedItems.Add(*It);
+    }
+
+    for (TActorIterator<AHouse> It(GetWorld()); It; ++It)
+    {
+        if (FVector::Dist(PawnLocation, It->GetActorLocation()) <= ScanRadius)
+            PerceivedHouses.Add(*It);
+    }
 }
 
 void UStudentPerceptor::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
@@ -181,16 +164,16 @@ void UStudentPerceptor::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
         if (bSuccessfullySensed)
         {
             PerceivedItems.AddUnique(Actor);
-            EItemType Type = ClassifyItem(Actor);
+            EMyItemType Type = ClassifyItem(Actor);
             
             FString ItemTypeName;
             switch (Type)
             {
-                case EItemType::Medkit: ItemTypeName = TEXT("Medkit"); break;
-                case EItemType::Food: ItemTypeName = TEXT("Food"); break;
-                case EItemType::Pistol: ItemTypeName = TEXT("Pistol"); break;
-                case EItemType::Shotgun: ItemTypeName = TEXT("Shotgun"); break;
-                case EItemType::Garbage: ItemTypeName = TEXT("Garbage"); break;
+                case EMyItemType::Medkit: ItemTypeName = TEXT("Medkit"); break;
+                case EMyItemType::Food: ItemTypeName = TEXT("Food"); break;
+                case EMyItemType::Pistol: ItemTypeName = TEXT("Pistol"); break;
+                case EMyItemType::Shotgun: ItemTypeName = TEXT("Shotgun"); break;
+                case EMyItemType::Garbage: ItemTypeName = TEXT("Garbage"); break;
                 default: ItemTypeName = TEXT("Unknown"); break;
             }
             
@@ -243,12 +226,72 @@ void UStudentPerceptor::UpdateBlackboard()
         return;
     }
 
+    UHealthComponent* HealthComp = OwnerPawn->FindComponentByClass<UHealthComponent>();
+    if (HealthComp)
+    {
+        const int32 CurrentHealth = HealthComp->GetHealth();
+        const int32 MaxHealth = HealthComp->GetMaxHealth();
+        const float HealthPercent = ((float)CurrentHealth / MaxHealth) * 100.0f;
+        
+        Blackboard->SetValueAsInt(FName("CurrentHealth"), CurrentHealth);
+        Blackboard->SetValueAsInt(FName("MaxHealth"), MaxHealth);
+        Blackboard->SetValueAsFloat(FName("HealthPercent"), HealthPercent);
+        Blackboard->SetValueAsBool(FName("IsAlive"), HealthComp->IsAlive());
+    }
+
+    UStaminaComponent* StaminaComp = OwnerPawn->FindComponentByClass<UStaminaComponent>();
+    if (StaminaComp)
+    {
+        const float CurrentStamina = StaminaComp->GetCurrentStamina();
+        const float MaxStamina = StaminaComp->GetMaxStamina();
+        const float StaminaPercent = (CurrentStamina / MaxStamina) * 100.0f;
+        
+        Blackboard->SetValueAsFloat(FName("CurrentStamina"), CurrentStamina);
+        Blackboard->SetValueAsFloat(FName("MaxStamina"), MaxStamina);
+        Blackboard->SetValueAsFloat(FName("StaminaPercent"), StaminaPercent);
+    }
+
+    UInventoryComponent* InventoryComp = OwnerPawn->FindComponentByClass<UInventoryComponent>();
+    if (InventoryComp)
+    {
+        const TArray<ABaseItem*>& Items = InventoryComp->GetInventory();
+        
+        bool bHasWeapon = false;
+        bool bHasMedkit = false;
+        bool bHasFood = false;
+        int32 TotalAmmo = 0;
+        
+        for (ABaseItem* Item : Items)
+        {
+            if (Item)
+            {
+                EItemType Type = Item->GetItemType();
+                
+                if (Type == EItemType::Pistol || Type == EItemType::Shotgun)
+                {
+                    if (Item->GetValue() > 0)
+                        bHasWeapon = true; 
+                    TotalAmmo += Item->GetValue();
+                }
+                else if (Type == EItemType::Medkit && Item->GetValue() > 0)
+                    bHasMedkit = true;
+                else if (Type == EItemType::Food && Item->GetValue() > 0)
+                    bHasFood = true;
+            }
+        }
+        
+        Blackboard->SetValueAsBool(FName("HasWeapon"), bHasWeapon);
+        Blackboard->SetValueAsBool(FName("HasMedkit"), bHasMedkit);
+        Blackboard->SetValueAsBool(FName("HasFood"), bHasFood);
+        Blackboard->SetValueAsInt(FName("WeaponAmmo"), TotalAmmo);
+        Blackboard->SetValueAsFloat(FName("PickupRange"), InventoryComp->GetPickupRange());
+    }
+
     AActor* NearestPurge = FindNearestPurgeZone();
     if (NearestPurge)
     {
         Blackboard->SetValueAsObject(FName("ActivePurgeZone"), NearestPurge);
         Blackboard->SetValueAsBool(FName("InPurgeZone"), true);
-        UE_LOG(LogTemp, Error, TEXT("☠️ [BB] PURGE ZONE ACTIVE!"));
     }
     else
     {
@@ -268,13 +311,10 @@ void UStudentPerceptor::UpdateBlackboard()
         );
         
         bIsInDanger = (Distance < DangerRange);
-        
+        Blackboard->SetValueAsInt(FName("NearbyZombieCount"), PerceivedZombies.Num());
         if (bIsInDanger)
         {
             Blackboard->SetValueAsObject(FName("NearestZombie"), MostDangerousZombie);
-            Blackboard->SetValueAsInt(FName("NearbyZombieCount"), PerceivedZombies.Num());
-            UE_LOG(LogTemp, Warning, TEXT("⚠️ [BB] Threat: %s at %.0fm (Total: %d)"), 
-                *MostDangerousZombie->GetName(), Distance, PerceivedZombies.Num());
         }
         else
         {
@@ -289,16 +329,37 @@ void UStudentPerceptor::UpdateBlackboard()
 
     Blackboard->SetValueAsBool(FName("IsInDanger"), bIsInDanger);
 
-    AActor* BestItem = FindBestItem();
-    if (BestItem)
+    bool bHasInventorySpace = false;
+    if (InventoryComp)
     {
-        Blackboard->SetValueAsObject(FName("BestItem"), BestItem);
-        UE_LOG(LogTemp, Log, TEXT("✅ [BB] BestItem: %s"), *BestItem->GetName());
+        for (ABaseItem* Slot : InventoryComp->GetInventory())
+        {
+            if (!Slot) { bHasInventorySpace = true; break; }
+        }
+    }
+
+    AActor* BestItem = nullptr;
+    if (bHasInventorySpace)
+    {
+        BestItem = FindBestItem();
     }
     else
     {
-        Blackboard->ClearValue(FName("BestItem"));
+        for (AActor* Item : PerceivedItems)
+        {
+            if (!Item) continue;
+            ABaseItem* BaseItem = Cast<ABaseItem>(Item);
+            if (BaseItem && BaseItem->GetItemType() == EItemType::Garbage)
+            {
+                BestItem = Item;
+                break;
+            }
+        }
     }
+    if (BestItem)
+        Blackboard->SetValueAsObject(FName("BestItem"), BestItem);
+    else
+        Blackboard->ClearValue(FName("BestItem"));
 
     AActor* NearestHouse = FindNearestHouse();
     if (NearestHouse)
@@ -344,37 +405,53 @@ EZombieType UStudentPerceptor::ClassifyZombie(AActor* Zombie) const
     return EZombieType::Unknown;
 }
 
-EItemType UStudentPerceptor::ClassifyItem(AActor* Item) const
+EMyItemType UStudentPerceptor::ClassifyItem(AActor* Item) const
 {
     if (!Item)
     {
-        return EItemType::Garbage;
+        return EMyItemType::Unknown;
     }
 
-    FString ClassName = Item->GetClass()->GetName();
+    ABaseItem* BaseItem = Cast<ABaseItem>(Item);
     
-    if (ClassName.Contains(TEXT("Medkit")))
+    if (!BaseItem)
     {
-        return EItemType::Medkit;
-    }
-    else if (ClassName.Contains(TEXT("Food")))
-    {
-        return EItemType::Food;
-    }
-    else if (ClassName.Contains(TEXT("Pistol")))
-    {
-        return EItemType::Pistol;
-    }
-    else if (ClassName.Contains(TEXT("Shotgun")))
-    {
-        return EItemType::Shotgun;
-    }
-    else if (ClassName.Contains(TEXT("Garbage")))
-    {
-        return EItemType::Garbage;
+        FString ClassName = Item->GetClass()->GetName();
+        
+        if (ClassName.Contains(TEXT("Medkit")))
+            return EMyItemType::Medkit;
+        else if (ClassName.Contains(TEXT("Food")))
+            return EMyItemType::Food;
+        else if (ClassName.Contains(TEXT("Pistol")))
+            return EMyItemType::Pistol;
+        else if (ClassName.Contains(TEXT("Shotgun")))
+            return EMyItemType::Shotgun;
+        else if (ClassName.Contains(TEXT("Garbage")))
+            return EMyItemType::Garbage;
+            
+        return EMyItemType::Unknown;
     }
 
-    return EItemType::Garbage;
+    switch (BaseItem->GetItemType())
+    {
+    case EItemType::Medkit:
+        return EMyItemType::Medkit;
+            
+    case EItemType::Food:
+        return EMyItemType::Food;
+            
+    case EItemType::Pistol:
+        return EMyItemType::Pistol;
+            
+    case EItemType::Shotgun:
+        return EMyItemType::Shotgun;
+            
+    case EItemType::Garbage:
+        return EMyItemType::Garbage;
+            
+    default:
+        return EMyItemType::Unknown;
+    }
 }
 
 float UStudentPerceptor::CalculateZombieThreat(AActor* Zombie, const FVector& PawnLocation) const
@@ -391,10 +468,10 @@ float UStudentPerceptor::CalculateZombieThreat(AActor* Zombie, const FVector& Pa
     switch (Type)
     {
         case EZombieType::Runner:
-            ThreatScore = 0.8f;
+            ThreatScore = 0.7f;
             break;
         case EZombieType::Heavy:
-            ThreatScore = 0.6f; 
+            ThreatScore = 0.9f; 
             break;
         case EZombieType::Normal:
             ThreatScore = 0.5f;
@@ -420,49 +497,75 @@ float UStudentPerceptor::CalculateItemPriority(AActor* Item, const FVector& Pawn
         return 0.0f;
     }
 
-    UBlackboardComponent* BB = GetBlackboard();
-    if (!BB)
+    APawn* OwnerPawn = Cast<APawn>(GetOwner());
+    if (!OwnerPawn)
     {
         return 0.0f;
     }
 
-    float Priority = 0.0f;
-    
-    const float Health = BB->GetValueAsFloat(FName("CurrentHealth"));
-    const float Energy = BB->GetValueAsFloat(FName("CurrentStamina"));
-    const bool bHasWeapon = BB->GetValueAsBool(FName("HasWeapon"));
-    const int32 NearbyZombies = BB->GetValueAsInt(FName("NearbyZombieCount"));
+    UHealthComponent* HealthComp = OwnerPawn->FindComponentByClass<UHealthComponent>();
+    UStaminaComponent* StaminaComp = OwnerPawn->FindComponentByClass<UStaminaComponent>();
+    UInventoryComponent* InventoryComp = OwnerPawn->FindComponentByClass<UInventoryComponent>();
 
-    EItemType Type = ClassifyItem(Item);
+    if (!HealthComp || !StaminaComp || !InventoryComp)
+    {
+        return 0.0f;
+    }
+
+    const int32 CurrentHealth = HealthComp->GetHealth();
+    const int32 MaxHealth = HealthComp->GetMaxHealth();
+    const float HealthPercent = ((float)CurrentHealth / MaxHealth) * 100.0f;
+
+    const float CurrentStamina = StaminaComp->GetCurrentStamina();
+    const float MaxStamina = StaminaComp->GetMaxStamina();
+    const float StaminaPercent = (CurrentStamina / MaxStamina) * 100.0f;
+
+    bool bHasWeapon = false;
+    const TArray<ABaseItem*>& Items = InventoryComp->GetInventory();
+    for (ABaseItem* InventoryItem : Items)
+    {
+        if (InventoryItem)
+        {
+            EItemType Type = InventoryItem->GetItemType();
+            if (Type == EItemType::Pistol || Type == EItemType::Shotgun)
+            {
+                if (InventoryItem->GetValue() > 0)
+                    bHasWeapon = true;
+                break;
+            }
+        }
+    }
+
+    UBlackboardComponent* BB = GetBlackboard();
+    const int32 NearbyZombies = BB ? BB->GetValueAsInt(FName("NearbyZombieCount")) : 0;
+
+    float Priority = 0.0f;
+
+    EMyItemType Type = ClassifyItem(Item);
 
     switch (Type)
     {
-    case EItemType::Medkit:
-        if (Health < 30.0f) Priority = 1000.0f;
-        else if (Health < 60.0f) Priority = 500.0f;
+    case EMyItemType::Medkit:
+        if (CurrentHealth <= 3) Priority = 1000.0f;      
+        else if (CurrentHealth <= 6) Priority = 500.0f;  
         else Priority = 100.0f;
         break;
 
-    case EItemType::Pistol:
+    case EMyItemType::Food:
+        if (StaminaPercent < 20.0f) Priority = 700.0f;
+        else if (StaminaPercent < 50.0f) Priority = 400.0f;
+        else Priority = 200.0f;
+        break;
+
+    case EMyItemType::Pistol:
+    case EMyItemType::Shotgun:
         if (!bHasWeapon) Priority = 900.0f;
         else if (NearbyZombies > 2) Priority = 300.0f;
         else Priority = 50.0f;
         break;
 
-    case EItemType::Shotgun:
-        if (!bHasWeapon) Priority = 900.0f;
-        else if (NearbyZombies > 2) Priority = 400.0f;
-        else Priority = 50.0f;
-        break;
-
-    case EItemType::Food:
-        if (Energy < 20.0f) Priority = 700.0f;
-        else if (Energy < 50.0f) Priority = 400.0f;
-        else Priority = 200.0f;
-        break;
-
-    case EItemType::Garbage:
-        Priority = -100.0f; 
+    case EMyItemType::Garbage:
+        Priority = -100.0f;
         break;
 
     default:
@@ -471,7 +574,7 @@ float UStudentPerceptor::CalculateItemPriority(AActor* Item, const FVector& Pawn
     }
 
     const float Distance = FVector::Dist(PawnLocation, Item->GetActorLocation());
-    Priority -= (Distance * 0.1f);
+    Priority -= FMath::Min(Distance * 0.01f, Priority * 0.5f);
 
     return Priority;
 }

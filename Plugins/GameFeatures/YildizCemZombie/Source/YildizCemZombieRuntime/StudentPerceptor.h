@@ -3,16 +3,31 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Perception/AIPerceptionTypes.h"
-#include "Items/ItemType.h"
 #include "StudentPerceptor.generated.h"
 
+class UHealthComponent;
+class UStaminaComponent;
+class UInventoryComponent;
+class ABaseItem;
 class UExplorationMemory;
+
 UENUM(BlueprintType)
 enum class EZombieType : uint8
 {
 	Normal,
 	Runner,
 	Heavy,
+	Unknown
+};
+
+UENUM(BlueprintType)
+enum class EMyItemType : uint8
+{
+	Medkit,
+	Food,
+	Pistol,
+	Shotgun,
+	Garbage,
 	Unknown
 };
 
@@ -80,7 +95,7 @@ protected:
 	AActor* FindNearestPurgeZone() const;
 
 	EZombieType ClassifyZombie(AActor* Zombie) const;
-	EItemType ClassifyItem(AActor* Item) const;
+	EMyItemType ClassifyItem(AActor* Item) const;
 	bool IsActorType(AActor* Actor, const FString& TypeName) const;
 	
 	float CalculateZombieThreat(AActor* Zombie, const FVector& PawnLocation) const;
@@ -90,4 +105,5 @@ private:
 	float TimeSinceLastScan = 0.0f;
 	bool bUseManualScan = true;
 	float LastMemoryCleanupTime = 0.0f; 
+	int32 LastPerceivedHouseCount = 0;
 };

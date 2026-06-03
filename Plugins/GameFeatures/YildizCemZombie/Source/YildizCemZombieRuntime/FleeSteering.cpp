@@ -37,15 +37,15 @@ FVector UFleeSteering::CalculateSteering(APawn* Pawn, const FVector& CurrentVelo
 	const FVector FromThreat = PawnLocation - Threat;
 	const float Distance = FromThreat.Size();
 
-	if (Distance > PanicDistance)
-	{
-		return FVector::ZeroVector;
-	}
 	if (Distance > MaxFleeDistance)
 	{
 		return FVector::ZeroVector;
 	}
-
+	if (Distance > PanicDistance)
+	{
+		return FVector::ZeroVector;
+	}
+	
 	FVector DesiredVelocity = FromThreat.GetSafeNormal() * MaxSpeed;
 
 	if (Distance < PanicDistance)

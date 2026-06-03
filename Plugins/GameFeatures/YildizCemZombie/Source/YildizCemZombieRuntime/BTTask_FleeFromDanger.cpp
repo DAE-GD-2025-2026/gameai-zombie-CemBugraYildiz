@@ -37,7 +37,6 @@ EBTNodeResult::Type UBTTask_FleeFromDanger::ExecuteTask(UBehaviorTreeComponent& 
     
     if (!DangerActor)
     {
-        UE_LOG(LogTemp, Log, TEXT("ℹ️ [FLEE] No danger actor found"));
         return EBTNodeResult::Failed;
     }
 
@@ -45,22 +44,18 @@ EBTNodeResult::Type UBTTask_FleeFromDanger::ExecuteTask(UBehaviorTreeComponent& 
     const FVector PawnLocation = Pawn->GetActorLocation();
     const FVector DangerLocation = DangerActor->GetActorLocation();
     const float CurrentDistance = FVector::Dist(PawnLocation, DangerLocation);
-
+    FFleeTaskMemory* Memory = CastInstanceNodeMemory<FFleeTaskMemory>(NodeMemory);
+    Memory->TaskStartTime = GetWorld()->GetTimeSeconds();
     const float SafeDistance = FleeDistance;
     if (CurrentDistance > SafeDistance)
     {
-        UE_LOG(LogTemp, Log, TEXT("✅ [FLEE] Safe distance reached (%.0fm > %.0fm)"), 
-            CurrentDistance, SafeDistance);
-        
         BlackboardComp->SetValueAsBool(FName("IsInDanger"), false);
-        
         return EBTNodeResult::Succeeded;
     }
 
     if (bUseSteeringBehavior)
     {
         FleeUsingSteering(OwnerComp, DangerActor);
-        UE_LOG(LogTemp, Warning, TEXT("🏃 [FLEE] Using steering behavior to escape"));
         return EBTNodeResult::InProgress; 
     }
 
@@ -79,9 +74,6 @@ EBTNodeResult::Type UBTTask_FleeFromDanger::ExecuteTask(UBehaviorTreeComponent& 
             {
                 TargetLocation = SafeHouse->GetActorLocation();
                 bFoundTarget = true;
-                
-                UE_LOG(LogTemp, Warning, TEXT("🏠 [FLEE] Fleeing to safe house: %s"), 
-                    *SafeHouse->GetName());
             }
         }
     }
@@ -92,7 +84,6 @@ EBTNodeResult::Type UBTTask_FleeFromDanger::ExecuteTask(UBehaviorTreeComponent& 
         TargetLocation = PawnLocation + (FleeDirection * FleeDistance);
         bFoundTarget = true;
         
-        UE_LOG(LogTemp, Warning, TEXT("🏃 [FLEE] Fleeing away from zombie"));
     }
 
     UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
@@ -117,14 +108,10 @@ EBTNodeResult::Type UBTTask_FleeFromDanger::ExecuteTask(UBehaviorTreeComponent& 
         
         if (MoveResult == EPathFollowingRequestResult::RequestSuccessful)
         {
-            UE_LOG(LogTemp, Warning, TEXT("🏃 [FLEE] Escaping from %s (Distance: %.0fm)"), 
-                *DangerActor->GetName(), CurrentDistance);
-            
             return EBTNodeResult::InProgress;
         }
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("❌ [FLEE] Failed to find escape route"));
     return EBTNodeResult::Failed;
 }
 
@@ -148,6 +135,29 @@ void UBTTask_FleeFromDanger::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* 
 
     AActor* DangerActor = Cast<AActor>(BlackboardComp->GetValueAsObject(DangerActorKey.SelectedKeyName));
     APawn* Pawn = AIController->GetPawn();
+    FFleeTaskMemory* Memory = CastInstanceNodeMemory<FFleeTaskMemory>(NodeMemory);
+    float CurrentTime = GetWorld()->GetTimeSeconds();
+    float ElapsedTime = CurrentTime - Memory->TaskStartTime;
+
+    if (ElapsedTime > 10.0f)
+    {
+        USteeringComponent* SteeringComp = Pawn->FindComponentByClass<USteeringComponent>();
+        if (SteeringComp) SteeringComp->ClearAllBehaviors();
+        FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+        return;
+    }
+
+    if (bUseSteeringBehavior && ElapsedTime > 2.0f)
+    {
+        float PawnSpeed = Pawn->GetVelocity().Size();
+        if (PawnSpeed < 10.0f)
+        {
+            USteeringComponent* SteeringComp = Pawn->FindComponentByClass<USteeringComponent>();
+            if (SteeringComp) SteeringComp->ClearAllBehaviors();
+            FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+            return;
+        }
+    }
 
     if (!DangerActor)
     {
@@ -159,7 +169,6 @@ void UBTTask_FleeFromDanger::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* 
     
     if (Distance > FleeDistance)
     {
-        UE_LOG(LogTemp, Log, TEXT("✅ [FLEE STEERING] Safe distance reached!"));
         BlackboardComp->SetValueAsBool(FName("IsInDanger"), false);
         
         USteeringComponent* SteeringComp = Pawn->FindComponentByClass<USteeringComponent>();
@@ -194,9 +203,10 @@ void UBTTask_FleeFromDanger::FleeUsingSteering(UBehaviorTreeComponent& OwnerComp
 
     UFleeSteering* FleeBehavior = NewObject<UFleeSteering>();
     FleeBehavior->SetThreatActor(Threat);
+    FleeBehavior->MaxForce = 1200.0f;
     FleeBehavior->PanicDistance = FleeDistance;
     FleeBehavior->MaxFleeDistance = FleeDistance * 1.5f;
-    FleeBehavior->MaxSpeed = 600.0f;
+    FleeBehavior->MaxSpeed = 700.0f;
     FleeBehavior->Weight = 2.0f; 
 
     SteeringComp->AddSteeringBehavior(FleeBehavior);

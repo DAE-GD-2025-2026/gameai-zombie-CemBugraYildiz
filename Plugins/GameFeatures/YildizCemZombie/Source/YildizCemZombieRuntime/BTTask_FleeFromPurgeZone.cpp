@@ -13,7 +13,7 @@ UBTTask_FleeFromPurgeZone::UBTTask_FleeFromPurgeZone()
     MinSafeDistance = 2500.0f;
     SearchRadius = 5000.0f;
     bUseSteeringBehavior = true; 
-    
+    bNotifyTick = true;
     PurgeZoneKey.AddObjectFilter(this, GET_MEMBER_NAME_CHECKED(UBTTask_FleeFromPurgeZone, PurgeZoneKey), AActor::StaticClass());
 }
 
@@ -35,7 +35,6 @@ EBTNodeResult::Type UBTTask_FleeFromPurgeZone::ExecuteTask(UBehaviorTreeComponen
     
     if (!PurgeZone)
     {
-        UE_LOG(LogTemp, Log, TEXT("ℹ️ [PURGE FLEE] No active purge zone"));
         BlackboardComp->SetValueAsBool(FName("InPurgeZone"), false);
         return EBTNodeResult::Failed;
     }
@@ -48,9 +47,6 @@ EBTNodeResult::Type UBTTask_FleeFromPurgeZone::ExecuteTask(UBehaviorTreeComponen
     
     if (CurrentDistance > MinSafeDistance)
     {
-        UE_LOG(LogTemp, Warning, TEXT("✅ [PURGE FLEE] Safe distance reached! (%.0fm > %.0fm)"), 
-            CurrentDistance, MinSafeDistance);
-        
         BlackboardComp->ClearValue(PurgeZoneKey.SelectedKeyName);
         BlackboardComp->SetValueAsBool(FName("InPurgeZone"), false);
         
@@ -60,7 +56,6 @@ EBTNodeResult::Type UBTTask_FleeFromPurgeZone::ExecuteTask(UBehaviorTreeComponen
     if (bUseSteeringBehavior)
     {
         FleeUsingSteering(OwnerComp, PurgeZone);
-        UE_LOG(LogTemp, Error, TEXT("🏃 [PURGE FLEE] Using STEERING to escape! Distance: %.0fm"), CurrentDistance);
         return EBTNodeResult::InProgress;
     }
 
@@ -70,7 +65,6 @@ EBTNodeResult::Type UBTTask_FleeFromPurgeZone::ExecuteTask(UBehaviorTreeComponen
     UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
     if (!NavSys)
     {
-        UE_LOG(LogTemp, Error, TEXT("❌ [PURGE FLEE] No Navigation System!"));
         return EBTNodeResult::Failed;
     }
 
@@ -84,8 +78,6 @@ EBTNodeResult::Type UBTTask_FleeFromPurgeZone::ExecuteTask(UBehaviorTreeComponen
 
     if (!bFoundLocation)
     {
-        UE_LOG(LogTemp, Warning, TEXT("⚠️ [PURGE FLEE] Direct escape failed, trying alternatives..."));
-        
         for (int32 i = 0; i < 8; i++)
         {
             float Angle = (360.0f / 8.0f) * i;
@@ -97,7 +89,6 @@ EBTNodeResult::Type UBTTask_FleeFromPurgeZone::ExecuteTask(UBehaviorTreeComponen
                 if (IsLocationSafeFromPurge(ResultLocation.Location, PurgeZone))
                 {
                     bFoundLocation = true;
-                    UE_LOG(LogTemp, Warning, TEXT("✅ [PURGE FLEE] Alternative route found at angle %.0f"), Angle);
                     break;
                 }
             }
@@ -119,13 +110,9 @@ EBTNodeResult::Type UBTTask_FleeFromPurgeZone::ExecuteTask(UBehaviorTreeComponen
         
         if (MoveResult == EPathFollowingRequestResult::RequestSuccessful)
         {
-            UE_LOG(LogTemp, Error, TEXT("🏃 [PURGE FLEE] ESCAPING! Distance: %.0fm"), CurrentDistance);
             return EBTNodeResult::InProgress;
         }
     }
-
-    UE_LOG(LogTemp, Error, TEXT("☠️ [PURGE FLEE] CRITICAL! No safe path, moving randomly!"));
-    
     FNavLocation RandomLocation;
     if (NavSys->GetRandomPointInNavigableRadius(PawnLocation, SearchRadius, RandomLocation))
     {
@@ -162,7 +149,6 @@ void UBTTask_FleeFromPurgeZone::TickTask(UBehaviorTreeComponent& OwnerComp, uint
     
     if (Distance > MinSafeDistance)
     {
-        UE_LOG(LogTemp, Warning, TEXT("✅ [PURGE FLEE STEERING] Safe distance reached!"));
         BlackboardComp->ClearValue(PurgeZoneKey.SelectedKeyName);
         BlackboardComp->SetValueAsBool(FName("InPurgeZone"), false);
         
@@ -204,6 +190,7 @@ void UBTTask_FleeFromPurgeZone::FleeUsingSteering(UBehaviorTreeComponent& OwnerC
     FleeBehavior->SetThreatActor(PurgeZone);
     FleeBehavior->PanicDistance = MinSafeDistance * 2.0f; 
     FleeBehavior->MaxFleeDistance = MinSafeDistance * 3.0f;
+    FleeBehavior->MaxForce = 1500.0f;
     FleeBehavior->MaxSpeed = 700.0f; 
     FleeBehavior->Weight = 3.0f; 
 

@@ -28,5 +28,5 @@ protected:
 	float LowAmmoThreshold = 5.0f;
 
 private:
-	bool ShouldFleeFromZombies(int32 ZombieCount, float NearestZombieDistance, bool bHasWeapon, float CurrentAmmo, float CurrentHealth) const;
+	bool ShouldFleeFromZombies(int32 ZombieCount, float NearestZombieDistance, bool bHasWeapon, int32 CurrentAmmo, int32 CurrentHealth) const;
 };

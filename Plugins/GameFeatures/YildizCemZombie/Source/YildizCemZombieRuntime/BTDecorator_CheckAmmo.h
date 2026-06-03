@@ -14,8 +14,8 @@ public:
 
 	virtual bool CalculateRawConditionValue(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) const override;
 
-	UPROPERTY(EditAnywhere, Category = "Condition")
-	float MinAmmo = 5.0f;
+	UPROPERTY(EditAnywhere, Category = "Ammo")
+	int32 MinAmmo = 5;
 
 	UPROPERTY(EditAnywhere, Category = "Blackboard")
 	FBlackboardKeySelector AmmoKey;

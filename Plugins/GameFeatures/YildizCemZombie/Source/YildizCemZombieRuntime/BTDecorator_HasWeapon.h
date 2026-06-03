@@ -14,6 +14,6 @@ public:
 
 	virtual bool CalculateRawConditionValue(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) const override;
 
-	UPROPERTY(EditAnywhere, Category = "AI")
-	float MinAmmoRequired;
+	UPROPERTY(EditAnywhere, Category = "Weapon")
+	int32 MinAmmoRequired = 3;
 };
