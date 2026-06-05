@@ -11,6 +11,7 @@
 #include "Items/BaseItem.h"
 #include "Zombies/BaseZombie.h"
 #include "Village/House/House.h"
+#include "PurgeZones/PurgeZone.h"
 
 UStudentPerceptor::UStudentPerceptor()
 {
@@ -32,7 +33,6 @@ void UStudentPerceptor::BeginPlay()
             ExplorationMemory->RegisterComponent();
             OwnerPawn->AddInstanceComponent(ExplorationMemory);
             
-            UE_LOG(LogTemp, Warning, TEXT("✅ [EXPLORATION] ExplorationMemory component created"));
         }
     }
     if (!OwnerPawn) return;
@@ -40,7 +40,6 @@ void UStudentPerceptor::BeginPlay()
     AAIController* AIController = Cast<AAIController>(OwnerPawn->GetController());
     if (!AIController)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[PERCEPTION] No AIController, using manual scan"));
         bUseManualScan = true;
         return;
     }
@@ -48,7 +47,6 @@ void UStudentPerceptor::BeginPlay()
     UAIPerceptionComponent* PerceptionComp = AIController->GetPerceptionComponent();
     if (!PerceptionComp)
     {
-        UE_LOG(LogTemp, Warning, TEXT("🔧 [PERCEPTION] No PerceptionComponent, using MANUAL SCAN"));
         bUseManualScan = true;
         return;
     }
@@ -59,7 +57,6 @@ void UStudentPerceptor::BeginPlay()
     );
     
     bUseManualScan = false;
-    UE_LOG(LogTemp, Warning, TEXT("✅ [PERCEPTION] AIPerception registered successfully"));
 }
 
 void UStudentPerceptor::TickComponent(float DeltaTime, ELevelTick TickType, 
@@ -67,15 +64,13 @@ void UStudentPerceptor::TickComponent(float DeltaTime, ELevelTick TickType,
 {
     Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
     
-    if (bUseManualScan)
+    TimeSinceLastScan += DeltaTime;
+    if (TimeSinceLastScan >= ScanInterval)
     {
-        TimeSinceLastScan += DeltaTime;
-        
-        if (TimeSinceLastScan >= ScanInterval)
-        {
-            ManualScan();
-            TimeSinceLastScan = 0.0f;
-        }
+        ScanHousesAndPurgeZones();         
+        if (bUseManualScan)
+            ScanZombiesAndItems();         
+        TimeSinceLastScan = 0.0f;
     }
     
     if (ExplorationMemory && PerceivedHouses.Num() != LastPerceivedHouseCount)
@@ -96,39 +91,61 @@ void UStudentPerceptor::TickComponent(float DeltaTime, ELevelTick TickType,
     
     UpdateBlackboard();
 }
-
-void UStudentPerceptor::ManualScan()
+void UStudentPerceptor::ScanHousesAndPurgeZones()
 {
     APawn* OwnerPawn = Cast<APawn>(GetOwner());
-    if (!OwnerPawn || !GetWorld())
-    {
-        return;
-    }
+    if (!OwnerPawn || !GetWorld()) return;
 
     const FVector PawnLocation = OwnerPawn->GetActorLocation();
-    
-    PerceivedZombies.Empty();
-    PerceivedItems.Empty();
+
     PerceivedHouses.Empty();
     PerceivedPurgeZones.Empty();
-
-
-    for (TActorIterator<ABaseZombie> It(GetWorld()); It; ++It)
-    {
-        if (FVector::Dist(PawnLocation, It->GetActorLocation()) <= ScanRadius)
-            PerceivedZombies.Add(*It);
-    }
-
-    for (TActorIterator<ABaseItem> It(GetWorld()); It; ++It)
-    {
-        if (FVector::Dist(PawnLocation, It->GetActorLocation()) <= ScanRadius)
-            PerceivedItems.Add(*It);
-    }
 
     for (TActorIterator<AHouse> It(GetWorld()); It; ++It)
     {
         if (FVector::Dist(PawnLocation, It->GetActorLocation()) <= ScanRadius)
             PerceivedHouses.Add(*It);
+    }
+
+    for (TActorIterator<APurgeZone> It(GetWorld()); It; ++It)
+    {
+        APurgeZone* Zone = *It;
+        FVector Origin, BoxExtent;
+        Zone->GetActorBounds(false, Origin, BoxExtent);
+        const float ZoneRadius = FMath::Max(BoxExtent.X, BoxExtent.Y);
+        if (FVector::Dist2D(PawnLocation, Origin) <= ZoneRadius + 500.0f)
+            PerceivedPurgeZones.Add(Zone);
+    }
+}
+
+void UStudentPerceptor::ScanZombiesAndItems()
+{
+    APawn* OwnerPawn = Cast<APawn>(GetOwner());
+    if (!OwnerPawn || !GetWorld()) return;
+
+    const FVector PawnLocation = OwnerPawn->GetActorLocation();
+
+    PerceivedZombies.Empty();
+    PerceivedItems.Empty();
+
+    for (TActorIterator<ABaseZombie> It(GetWorld()); It; ++It)
+    {
+        AActor* Zombie = *It;
+        if (FVector::Dist(PawnLocation, Zombie->GetActorLocation()) <= ScanRadius
+            && HasLineOfSight(PawnLocation, Zombie))
+        {
+            PerceivedZombies.Add(Zombie);
+        }
+    }
+
+    for (TActorIterator<ABaseItem> It(GetWorld()); It; ++It)
+    {
+        ABaseItem* Item = *It;
+        if (FVector::Dist(PawnLocation, Item->GetActorLocation()) <= ScanRadius
+            && HasLineOfSight(PawnLocation, Item))
+        {
+            PerceivedItems.Add(Item);
+        }
     }
 }
 
@@ -146,9 +163,6 @@ void UStudentPerceptor::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
         if (bSuccessfullySensed)
         {
             PerceivedZombies.AddUnique(Actor);
-            EZombieType Type = ClassifyZombie(Actor);
-            UE_LOG(LogTemp, Warning, TEXT("🧟 [ZOMBIE DETECTED] %s (Type: %d)"), 
-                *Actor->GetName(), (int32)Type);
         }
         else
         {
@@ -164,21 +178,6 @@ void UStudentPerceptor::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
         if (bSuccessfullySensed)
         {
             PerceivedItems.AddUnique(Actor);
-            EMyItemType Type = ClassifyItem(Actor);
-            
-            FString ItemTypeName;
-            switch (Type)
-            {
-                case EMyItemType::Medkit: ItemTypeName = TEXT("Medkit"); break;
-                case EMyItemType::Food: ItemTypeName = TEXT("Food"); break;
-                case EMyItemType::Pistol: ItemTypeName = TEXT("Pistol"); break;
-                case EMyItemType::Shotgun: ItemTypeName = TEXT("Shotgun"); break;
-                case EMyItemType::Garbage: ItemTypeName = TEXT("Garbage"); break;
-                default: ItemTypeName = TEXT("Unknown"); break;
-            }
-            
-            UE_LOG(LogTemp, Warning, TEXT("📦 [ITEM DETECTED] %s (Type: %s)"), 
-                *Actor->GetName(), *ItemTypeName);
         }
         else
         {
@@ -190,7 +189,6 @@ void UStudentPerceptor::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
         if (bSuccessfullySensed)
         {
             PerceivedHouses.AddUnique(Actor);
-            UE_LOG(LogTemp, Log, TEXT("🏠 [HOUSE DETECTED] %s"), *Actor->GetName());
         }
         else
         {
@@ -202,8 +200,6 @@ void UStudentPerceptor::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
         if (bSuccessfullySensed)
         {
             PerceivedPurgeZones.AddUnique(Actor);
-            UE_LOG(LogTemp, Error, TEXT("☠️ [PURGE ZONE DETECTED] %s - IMMEDIATE THREAT!"), 
-                *Actor->GetName());
         }
         else
         {
@@ -775,4 +771,17 @@ UBlackboardComponent* UStudentPerceptor::GetBlackboard() const
     }
     
     return nullptr;
+}
+bool UStudentPerceptor::HasLineOfSight(const FVector& From, AActor* Target) const
+{
+    if (!Target || !GetWorld()) return false;
+
+    FHitResult HitResult;
+    FCollisionQueryParams Params;
+    Params.AddIgnoredActor(Cast<AActor>(GetOwner()));
+    Params.AddIgnoredActor(Target);
+
+    return !GetWorld()->LineTraceSingleByChannel(
+        HitResult, From, Target->GetActorLocation(), ECC_Visibility, Params
+    );
 }

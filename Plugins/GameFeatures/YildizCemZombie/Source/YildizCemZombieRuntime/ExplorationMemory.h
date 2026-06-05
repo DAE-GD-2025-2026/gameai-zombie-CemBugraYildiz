@@ -129,7 +129,6 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Exploration")
 	float VisitRadius = 800.0f;
 
-	// House Clusters
 	UPROPERTY(BlueprintReadOnly, Category = "Exploration")
 	TArray<FHouseCluster> HouseClusters;
 

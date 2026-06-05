@@ -35,10 +35,8 @@ EBTNodeResult::Type UBTTask_ExploreVillage::ExecuteTask(UBehaviorTreeComponent& 
     int32 CurrentClusterIndex = -1;
     if (ExpMemory->IsInsideAnyCluster(CurrentLocation, CurrentClusterIndex))
     {
-        if (ExploreCluster(OwnerComp, CurrentClusterIndex, CurrentLocation))
-        {
-            return EBTNodeResult::Succeeded;
-        }
+        ExploreCluster(OwnerComp, CurrentClusterIndex, CurrentLocation);
+        return EBTNodeResult::Succeeded;
     }
 
     int32 NearestClusterIndex = ExpMemory->FindNearestUnexploredClusterIndex(CurrentLocation);
@@ -66,106 +64,74 @@ EBTNodeResult::Type UBTTask_ExploreVillage::ExecuteTask(UBehaviorTreeComponent& 
     return EBTNodeResult::Failed;
 }
 
-bool UBTTask_ExploreVillage::ExploreCluster(UBehaviorTreeComponent& OwnerComp, int32 ClusterIndex, const FVector& CurrentLocation)
+bool UBTTask_ExploreVillage::ExploreCluster(UBehaviorTreeComponent& OwnerComp,
+    int32 ClusterIndex, const FVector& CurrentLocation)
 {
     float CurrentTime = GetWorld()->GetTimeSeconds();
     if (CurrentTime - LastExploreTime < MinExploreInterval)
-    {
-        return EBTNodeResult::Failed;
-    }
+        return false; 
+
     LastExploreTime = CurrentTime;
-    
+
     AAIController* AIController = OwnerComp.GetAIOwner();
-    if (!AIController || !AIController->GetPawn())
-    {
-        return false;
-    }
+    if (!AIController || !AIController->GetPawn()) return false;
 
     APawn* Pawn = AIController->GetPawn();
     UExplorationMemory* ExpMemory = Pawn->FindComponentByClass<UExplorationMemory>();
-    
-    if (!ExpMemory)
-    {
-        return false;
-    }
+    if (!ExpMemory) return false;
 
-    FVector ClusterCenter;
-    float ClusterRadius;
-    int32 HouseCount;
-    bool bExplored;
-    
-    if (!ExpMemory->GetClusterInfo(ClusterIndex, ClusterCenter, ClusterRadius, HouseCount, bExplored))
-    {
-        return false;
-    }
+    FHouseCluster* Cluster = ExpMemory->GetClusterByIndex(ClusterIndex);
+    if (!Cluster || Cluster->Houses.Num() == 0) return false;
 
-    const int32 PointCount = 8;
+    FVector BestPoint = FVector::ZeroVector;
     float MinDistance = FLT_MAX;
-    FVector BestPoint = ClusterCenter;
 
-    for (int32 i = 0; i < PointCount; i++)
+    for (AActor* House : Cluster->Houses)
     {
-        const float Angle = (360.0f / PointCount) * i;
-        const float Radius = ClusterRadius * 0.7f;
-        
-        FVector TestPoint = ClusterCenter + FVector(
-            FMath::Cos(FMath::DegreesToRadians(Angle)) * Radius,
-            FMath::Sin(FMath::DegreesToRadians(Angle)) * Radius,
-            0.0f
-        );
+        if (!House) continue;
+        FVector HouseLoc = House->GetActorLocation();
 
-        if (!ExpMemory->IsLocationVisitedRecently(TestPoint, HouseVisitDistance, 300.0f))
+        if (!ExpMemory->IsLocationVisitedRecently(HouseLoc, 300.0f, 300.0f))
         {
-            const float Distance = FVector::Dist(CurrentLocation, TestPoint);
+            float Distance = FVector::Dist2D(CurrentLocation, HouseLoc);
             if (Distance < MinDistance)
             {
                 MinDistance = Distance;
-                BestPoint = TestPoint;
+                BestPoint   = HouseLoc;
             }
         }
     }
 
+    if (BestPoint.IsZero()) return false; 
+
     UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
-    if (!NavSys)
-    {
-        return false;
-    }
+    if (!NavSys) return false;
 
     FNavLocation NavLocation;
-    if (NavSys->ProjectPointToNavigation(BestPoint, NavLocation, FVector(1000.0f)))
+    if (NavSys->ProjectPointToNavigation(BestPoint, NavLocation, FVector(500.0f)))
     {
-        EPathFollowingRequestResult::Type MoveResult = AIController->MoveToLocation(
-            NavLocation.Location,
-            100.0f
-        );
-        
-        if (MoveResult == EPathFollowingRequestResult::RequestSuccessful)
+        EPathFollowingRequestResult::Type MoveResult =
+            AIController->MoveToLocation(NavLocation.Location, 150.0f);
+
+        if (MoveResult == EPathFollowingRequestResult::RequestSuccessful ||
+            MoveResult == EPathFollowingRequestResult::AlreadyAtGoal)
         {
+            ExpMemory->RecordVisitedLocation(BestPoint);
+
             if (bMarkAsExploredWhenDone)
             {
                 bool bAllVisited = true;
-                for (int32 i = 0; i < PointCount; i++)
+                for (AActor* House : Cluster->Houses)
                 {
-                    const float Angle = (360.0f / PointCount) * i;
-                    const float Radius = ClusterRadius * 0.7f;
-                    
-                    FVector TestPoint = ClusterCenter + FVector(
-                        FMath::Cos(FMath::DegreesToRadians(Angle)) * Radius,
-                        FMath::Sin(FMath::DegreesToRadians(Angle)) * Radius,
-                        0.0f
-                    );
-
-                    if (!ExpMemory->IsLocationVisitedRecently(TestPoint, HouseVisitDistance, 600.0f))
+                    if (!House) continue;
+                    if (!ExpMemory->IsLocationVisitedRecently(
+                            House->GetActorLocation(), 300.0f, 300.0f))
                     {
                         bAllVisited = false;
                         break;
                     }
                 }
-
-                if (bAllVisited)
-                {
-                    ExpMemory->MarkClusterAsExplored(ClusterIndex);
-                }
+                if (bAllVisited) ExpMemory->MarkClusterAsExplored(ClusterIndex);
             }
             return true;
         }

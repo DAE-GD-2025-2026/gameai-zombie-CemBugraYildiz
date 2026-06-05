@@ -28,9 +28,6 @@ void UExplorationMemory::RecordVisitedLocation(const FVector& Location)
 		{
 			VisitedLoc.VisitTime = CurrentTime;
 			VisitedLoc.VisitCount++;
-			
-			UE_LOG(LogTemp, Log, TEXT("📍 [EXPLORATION] Revisited location (Count: %d)"), 
-				VisitedLoc.VisitCount);
 			return;
 		}
 	}
@@ -42,9 +39,6 @@ void UExplorationMemory::RecordVisitedLocation(const FVector& Location)
 	{
 		VisitedLocations.RemoveAt(0);
 	}
-
-	UE_LOG(LogTemp, Log, TEXT("📍 [EXPLORATION] New location recorded (Total: %d)"), 
-		VisitedLocations.Num());
 }
 
 bool UExplorationMemory::IsLocationRecentlyVisited(const FVector& Location, float TimeThreshold) const
@@ -120,10 +114,6 @@ FVector UExplorationMemory::GetLeastVisitedAreaDirection(const FVector& CurrentL
 			BestDirection = Direction;
 		}
 	}
-
-	UE_LOG(LogTemp, Log, TEXT("🧭 [EXPLORATION] Least visited direction found (Density: %.0f)"), 
-		MinDensity);
-
 	return BestDirection;
 }
 
@@ -178,18 +168,10 @@ void UExplorationMemory::BuildClustersFromHouses(const TArray<AActor*>& Houses)
 					break;
 				}
 			}
-
 			NewClusters.Add(NewCluster);
-
-			UE_LOG(LogTemp, Warning, TEXT("🏘️ [CLUSTER] Village found: %d houses at %s"), 
-				NewCluster.Houses.Num(), 
-				*NewCluster.CenterLocation.ToString());
 		}
 	}
-
 	HouseClusters = NewClusters;
-
-	UE_LOG(LogTemp, Warning, TEXT("🏘️ [CLUSTER] Total villages: %d"), HouseClusters.Num());
 }
 
 bool UExplorationMemory::AreHousesInSameCluster(AActor* House1, AActor* House2) const
@@ -256,14 +238,6 @@ int32 UExplorationMemory::FindNearestUnexploredClusterIndex(const FVector& Curre
 			NearestIndex = i;
 		}
 	}
-
-	if (NearestIndex >= 0)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("🏘️ [CLUSTER] Nearest unexplored village at %.0fm (%d houses)"), 
-			MinDistance, 
-			HouseClusters[NearestIndex].Houses.Num());
-	}
-
 	return NearestIndex;
 }
 
@@ -293,7 +267,6 @@ void UExplorationMemory::MarkClusterAsExplored(int32 ClusterIndex)
 	if (ClusterIndex >= 0 && ClusterIndex < HouseClusters.Num())
 	{
 		HouseClusters[ClusterIndex].bFullyExplored = true;
-		UE_LOG(LogTemp, Warning, TEXT("✅ [CLUSTER] Village marked as fully explored"));
 	}
 }
 
@@ -328,6 +301,4 @@ void UExplorationMemory::CleanupOldMemories(float MaxAge)
 		return (CurrentTime - Loc.VisitTime) > MaxAge;
 	});
 
-	UE_LOG(LogTemp, Log, TEXT("🧹 [EXPLORATION] Cleaned old memories (Remaining: %d)"), 
-		VisitedLocations.Num());
 }

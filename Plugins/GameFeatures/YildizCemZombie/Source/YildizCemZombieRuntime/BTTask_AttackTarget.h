@@ -37,7 +37,7 @@ public:
 private:
 	void FireWeapon(APawn* Pawn, AActor* Target) const;
 	bool HasEnoughAmmo(APawn* Pawn) const;
-	
+	bool HasLineOfSight(APawn* Pawn, AActor* Target) const;
 	void ApproachUsingSeek(UBehaviorTreeComponent& OwnerComp, AActor* Target);
 	
 	float LastFireTime = 0.0f; 

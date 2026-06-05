@@ -42,10 +42,14 @@ EBTNodeResult::Type UBTTask_FleeFromPurgeZone::ExecuteTask(UBehaviorTreeComponen
     APawn* Pawn = AIController->GetPawn();
     const FVector PawnLocation = Pawn->GetActorLocation();
     const FVector PurgeLocation = PurgeZone->GetActorLocation();
-    
     const float CurrentDistance = FVector::Dist(PawnLocation, PurgeLocation);
     
-    if (CurrentDistance > MinSafeDistance)
+    FVector ZoneOrigin, ZoneExtent;
+    PurgeZone->GetActorBounds(false, ZoneOrigin, ZoneExtent);
+    const float ZoneRadius = FMath::Max(ZoneExtent.X, ZoneExtent.Y);
+    const float SafeDistance = ZoneRadius + 300.0f;
+    
+    if (CurrentDistance > SafeDistance)
     {
         BlackboardComp->ClearValue(PurgeZoneKey.SelectedKeyName);
         BlackboardComp->SetValueAsBool(FName("InPurgeZone"), false);
@@ -147,7 +151,12 @@ void UBTTask_FleeFromPurgeZone::TickTask(UBehaviorTreeComponent& OwnerComp, uint
 
     const float Distance = FVector::Dist(Pawn->GetActorLocation(), PurgeZone->GetActorLocation());
     
-    if (Distance > MinSafeDistance)
+    FVector ZoneOrigin, ZoneExtent;
+    PurgeZone->GetActorBounds(false, ZoneOrigin, ZoneExtent);
+    const float ZoneRadius = FMath::Max(ZoneExtent.X, ZoneExtent.Y);
+    const float SafeDistance = ZoneRadius + 300.0f;
+    
+    if (Distance > SafeDistance)
     {
         BlackboardComp->ClearValue(PurgeZoneKey.SelectedKeyName);
         BlackboardComp->SetValueAsBool(FName("InPurgeZone"), false);
@@ -169,13 +178,14 @@ void UBTTask_FleeFromPurgeZone::TickTask(UBehaviorTreeComponent& OwnerComp, uint
 void UBTTask_FleeFromPurgeZone::FleeUsingSteering(UBehaviorTreeComponent& OwnerComp, AActor* PurgeZone)
 {
     AAIController* AIController = OwnerComp.GetAIOwner();
+    
     if (!AIController || !AIController->GetPawn())
     {
         return;
     }
-
+    AIController->StopMovement();
+    
     APawn* Pawn = AIController->GetPawn();
-
     USteeringComponent* SteeringComp = Pawn->FindComponentByClass<USteeringComponent>();
     if (!SteeringComp)
     {
@@ -185,11 +195,15 @@ void UBTTask_FleeFromPurgeZone::FleeUsingSteering(UBehaviorTreeComponent& OwnerC
     }
 
     SteeringComp->ClearAllBehaviors();
+    
+    FVector ZoneOrigin, ZoneExtent;
+    PurgeZone->GetActorBounds(false, ZoneOrigin, ZoneExtent);
+    const float ZoneRadius = FMath::Max(ZoneExtent.X, ZoneExtent.Y);
 
     UFleeSteering* FleeBehavior = NewObject<UFleeSteering>();
     FleeBehavior->SetThreatActor(PurgeZone);
-    FleeBehavior->PanicDistance = MinSafeDistance * 2.0f; 
-    FleeBehavior->MaxFleeDistance = MinSafeDistance * 3.0f;
+    FleeBehavior->PanicDistance = ZoneRadius * 2.0f; 
+    FleeBehavior->MaxFleeDistance = ZoneRadius * 3.0f;
     FleeBehavior->MaxForce = 1500.0f;
     FleeBehavior->MaxSpeed = 700.0f; 
     FleeBehavior->Weight = 3.0f; 

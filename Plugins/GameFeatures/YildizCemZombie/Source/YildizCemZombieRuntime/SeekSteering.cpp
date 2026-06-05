@@ -35,13 +35,14 @@ FVector USeekSteering::CalculateSteering(APawn* Pawn, const FVector& CurrentVelo
 	const FVector PawnLocation = Pawn->GetActorLocation();
 	const FVector ToTarget = Target - PawnLocation;
 	const float Distance = ToTarget.Size();
+	const FVector ToTarget2D = FVector(ToTarget.X, ToTarget.Y, 0.0f);
 
 	if (Distance < 10.0f)
 	{
 		return FVector::ZeroVector;
 	}
 
-	FVector DesiredVelocity = ToTarget.GetSafeNormal() * MaxSpeed;
+	FVector DesiredVelocity = ToTarget2D.GetSafeNormal() * MaxSpeed;
 
 	if (bEnableArrival && Distance < ArrivalRadius)
 	{

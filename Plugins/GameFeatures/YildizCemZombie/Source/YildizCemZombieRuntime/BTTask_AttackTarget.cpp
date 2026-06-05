@@ -16,7 +16,7 @@ UBTTask_AttackTarget::UBTTask_AttackTarget()
 {
 	NodeName = TEXT("Attack Target");
 	AttackRange = 1500.0f;
-	MinAmmoToFight = 3.0f;
+	MinAmmoToFight = 1.0f;
 	bUseSeekSteering = true;        
 	FireInterval = 0.5f;            
     
@@ -174,9 +174,25 @@ void UBTTask_AttackTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* No
 		TargetRotation.Pitch = 0.0f;
 		TargetRotation.Roll = 0.0f;
 		Pawn->SetActorRotation(TargetRotation);
-    
 		AIController->SetFocus(Target);
-    
+		
+		if (!HasLineOfSight(Pawn, Target))
+		{
+			USteeringComponent* SteeringComp = Pawn->FindComponentByClass<USteeringComponent>();
+			if (!SteeringComp || !SteeringComp->HasActiveBehaviors())
+			{
+				ApproachUsingSeek(OwnerComp, Target);
+			}
+			return;
+		}
+		
+		USteeringComponent* SteeringComp = Pawn->FindComponentByClass<USteeringComponent>();
+		if (SteeringComp && SteeringComp->HasActiveBehaviors())
+		{
+			SteeringComp->ClearAllBehaviors();
+			SteeringComp->bAutoApplySteering = false;
+		}
+		
 		float CurrentTime = GetWorld()->GetTimeSeconds();
 		
 		if (CurrentTime - LastFireTime >= FireInterval)
@@ -324,4 +340,23 @@ bool UBTTask_AttackTarget::HasEnoughAmmo(APawn* Pawn) const
 
 	bool bHasEnough = (TotalAmmo >= MinAmmoToFight);
 	return bHasEnough;
+}
+bool UBTTask_AttackTarget::HasLineOfSight(APawn* Pawn, AActor* Target) const
+{
+	if (!Pawn || !Target || !Pawn->GetWorld()) return false;
+
+	FHitResult HitResult;
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(Pawn);
+	Params.AddIgnoredActor(Target);
+
+	const bool bBlocked = Pawn->GetWorld()->LineTraceSingleByChannel(
+		HitResult,
+		Pawn->GetActorLocation(),
+		Target->GetActorLocation(),
+		ECC_Visibility,
+		Params
+	);
+
+	return !bBlocked;
 }

@@ -119,11 +119,6 @@ void UBTTask_FleeFromDanger::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* 
 {
     Super::TickTask(OwnerComp, NodeMemory, DeltaSeconds);
 
-    if (!bUseSteeringBehavior)
-    {
-        return; 
-    }
-
     UBlackboardComponent* BlackboardComp = OwnerComp.GetBlackboardComponent();
     AAIController* AIController = OwnerComp.GetAIOwner();
     
@@ -147,7 +142,7 @@ void UBTTask_FleeFromDanger::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* 
         return;
     }
 
-    if (bUseSteeringBehavior && ElapsedTime > 2.0f)
+    if (ElapsedTime > 2.0f)
     {
         float PawnSpeed = Pawn->GetVelocity().Size();
         if (PawnSpeed < 10.0f)
@@ -188,9 +183,9 @@ void UBTTask_FleeFromDanger::FleeUsingSteering(UBehaviorTreeComponent& OwnerComp
     {
         return;
     }
-
+    AIController->StopMovement();
+    
     APawn* Pawn = AIController->GetPawn();
-
     USteeringComponent* SteeringComp = Pawn->FindComponentByClass<USteeringComponent>();
     if (!SteeringComp)
     {

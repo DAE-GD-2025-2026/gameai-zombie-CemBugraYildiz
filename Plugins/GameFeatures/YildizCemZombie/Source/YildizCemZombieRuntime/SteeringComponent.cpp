@@ -125,8 +125,10 @@ void USteeringComponent::ApplySteeringForce(const FVector& SteeringForce, float 
 	{
 		CurrentVelocity = CurrentVelocity.GetSafeNormal() * MaxSpeed;
 	}
-
+	
+	CurrentVelocity.Z = 0.0f; 
 	FVector NewLocation = OwnerPawn->GetActorLocation() + (CurrentVelocity * DeltaTime);
+	NewLocation.Z = OwnerPawn->GetActorLocation().Z; 
 	OwnerPawn->SetActorLocation(NewLocation, true);
 
 	if (!CurrentVelocity.IsNearlyZero())

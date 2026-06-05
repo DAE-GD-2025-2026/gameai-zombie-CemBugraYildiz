@@ -84,7 +84,8 @@ protected:
 	float ScanInterval = 0.5f;
 
 	void UpdateBlackboard();
-	void ManualScan();
+	void ScanHousesAndPurgeZones();
+	void ScanZombiesAndItems();
     
 	class UBlackboardComponent* GetBlackboard() const;
     
@@ -106,4 +107,6 @@ private:
 	bool bUseManualScan = true;
 	float LastMemoryCleanupTime = 0.0f; 
 	int32 LastPerceivedHouseCount = 0;
+	
+	bool HasLineOfSight(const FVector& From, AActor* Target) const;
 };
