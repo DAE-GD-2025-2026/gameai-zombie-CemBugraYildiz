@@ -6,8 +6,8 @@
 #include "Common/InventoryComponent.h"
 #include "Items/BaseItem.h"
 #include "SteeringComponent.h"
-#include "SeekSteering.h"
 #include "GameFramework/FloatingPawnMovement.h"
+#include "StudentPerceptor.h"
 
 UBTTask_GrabItem::UBTTask_GrabItem()
 {
@@ -105,32 +105,10 @@ EBTNodeResult::Type UBTTask_GrabItem::ExecuteTask(UBehaviorTreeComponent& OwnerC
     }
     else
     {
-        AIController->StopMovement();
+        USteeringComponent* SC = Pawn->FindComponentByClass<USteeringComponent>();
+        if (SC) { SC->ClearAllBehaviors(); SC->bAutoApplySteering = false; }
 
-        USteeringComponent* SteeringComp = Pawn->FindComponentByClass<USteeringComponent>();
-        if (!SteeringComp)
-        {
-            SteeringComp = NewObject<USteeringComponent>(Pawn);
-            SteeringComp->RegisterComponent();
-            Pawn->AddInstanceComponent(SteeringComp);
-        }
-        SteeringComp->ClearAllBehaviors();
-
-        USeekSteering* SeekBehavior = NewObject<USeekSteering>();
-        SeekBehavior->SetTargetActor(TargetItem);
-        SeekBehavior->bEnableArrival = true;
-        SeekBehavior->ArrivalRadius = GrabDistance * 2.0f;
-        SeekBehavior->MaxSpeed = 400.0f;
-        SeekBehavior->MaxForce = 600.0f;
-        SeekBehavior->Weight = 1.0f;
-
-        SteeringComp->AddSteeringBehavior(SeekBehavior);
-        SteeringComp->bAutoApplySteering = true;
-        SteeringComp->MaxSpeed = 400.0f;
-
-        UFloatingPawnMovement* MoveComp = Cast<UFloatingPawnMovement>(Pawn->GetMovementComponent());
-        if (MoveComp) MoveComp->MaxSpeed = 400.0f;
-
+        AIController->MoveToActor(TargetItem, GrabDistance * 0.8f);
         return EBTNodeResult::InProgress;
     }
 }
@@ -173,6 +151,8 @@ void UBTTask_GrabItem::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMe
         USteeringComponent* SC = Pawn->FindComponentByClass<USteeringComponent>();
         if (SC) { SC->ClearAllBehaviors(); SC->bAutoApplySteering = false; }
         BlackboardComp->ClearValue(FName("BestItem"));
+        UStudentPerceptor* Perceptor = Pawn->FindComponentByClass<UStudentPerceptor>();
+        if (Perceptor && TargetItem) Perceptor->MarkItemFailed(TargetItem);
         FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
         return;
     }
@@ -180,10 +160,11 @@ void UBTTask_GrabItem::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMe
     if (Distance > GrabDistance)
     {
         float PawnSpeed = Pawn->GetVelocity().Size();
-        if (PawnSpeed < 10.0f && ElapsedTime > 2.0f)
+        if (ElapsedTime > 1.0f && PawnSpeed < 10.0f)
         {
-            USteeringComponent* SC = Pawn->FindComponentByClass<USteeringComponent>();
-            if (SC) { SC->ClearAllBehaviors(); SC->bAutoApplySteering = false; }
+            UStudentPerceptor* Perceptor = Pawn->FindComponentByClass<UStudentPerceptor>();
+            if (Perceptor && TargetItem) Perceptor->MarkItemFailed(TargetItem);
+            AIController->StopMovement();
             BlackboardComp->ClearValue(FName("BestItem"));
             FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
             return;
@@ -260,17 +241,17 @@ int32 UBTTask_GrabItem::FindEmptySlot(UInventoryComponent* InventoryComp) const
 EBTNodeResult::Type UBTTask_GrabItem::AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
 {
     AAIController* AIController = OwnerComp.GetAIOwner();
-    if (AIController && AIController->GetPawn())
+    if (AIController)
     {
-        APawn* Pawn = AIController->GetPawn();
-        USteeringComponent* SC = Pawn->FindComponentByClass<USteeringComponent>();
-        if (SC)
+        AIController->StopMovement();
+        if (AIController->GetPawn())
         {
-            SC->ClearAllBehaviors();
-            SC->bAutoApplySteering = false;
+            APawn* Pawn = AIController->GetPawn();
+            USteeringComponent* SC = Pawn->FindComponentByClass<USteeringComponent>();
+            if (SC) { SC->ClearAllBehaviors(); SC->bAutoApplySteering = false; }
+            UFloatingPawnMovement* MC = Cast<UFloatingPawnMovement>(Pawn->GetMovementComponent());
+            if (MC) MC->MaxSpeed = 400.0f;
         }
-        UFloatingPawnMovement* MC = Cast<UFloatingPawnMovement>(Pawn->GetMovementComponent());
-        if (MC) MC->MaxSpeed = 400.0f;
     }
     return Super::AbortTask(OwnerComp, NodeMemory);
 }

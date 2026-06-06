@@ -3,6 +3,8 @@
 #include "NavigationSystem.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "ExplorationMemory.h"
+#include "Common/InventoryComponent.h"
+#include "Items/BaseItem.h"
 
 UBTTask_ExploreVillage::UBTTask_ExploreVillage()
 {
@@ -46,8 +48,36 @@ bool UBTTask_ExploreVillage::ExploreCluster(UBehaviorTreeComponent& OwnerComp,
             OutTargetHouse = House; 
         }
     }
+    if (!OutTargetLocation.IsZero()) return true;
+    UInventoryComponent* InvComp = Pawn->FindComponentByClass<UInventoryComponent>();
+    bool bHasSpace = false;
+    if (InvComp)
+        for (ABaseItem* Slot : InvComp->GetInventory())
+            if (!Slot) { bHasSpace = true; break; }
 
-    return !OutTargetLocation.IsZero();
+    if (bHasSpace && Cluster)
+    {
+        float MinDist = FLT_MAX;
+        for (AActor* KnownItem : ExpMemory->GetKnownWorldItems())
+        {
+            if (!KnownItem || !IsValid(KnownItem)) continue;
+            ABaseItem* BI = Cast<ABaseItem>(KnownItem);
+            if (!BI || BI->GetItemType() == EItemType::Garbage) continue;
+            float DistToCenter = FVector::Dist2D(KnownItem->GetActorLocation(), Cluster->CenterLocation);
+            if (DistToCenter <= Cluster->Radius + 600.0f)
+            {
+                float DistToMe = FVector::Dist2D(CurrentLocation, KnownItem->GetActorLocation());
+                if (DistToMe < MinDist)
+                {
+                    MinDist = DistToMe;
+                    OutTargetLocation = KnownItem->GetActorLocation();
+                    OutTargetHouse = nullptr;
+                }
+            }
+        }
+        if (!OutTargetLocation.IsZero()) return true;
+    }
+    return false;
 }
 EBTNodeResult::Type UBTTask_ExploreVillage::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
 {
@@ -155,6 +185,18 @@ void UBTTask_ExploreVillage::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* 
     }
     else if (Memory->TargetLocation != FVector::ZeroVector)
     {
+        if (!Memory->TargetHouseActor && ExpMemory && ExpMemory->GetClusterCount() > 0)
+        {
+            int32 NearestCluster = ExpMemory->FindNearestUnexploredClusterIndex(PawnLoc);
+            if (NearestCluster >= 0)
+            {
+                AIController->StopMovement();
+                Memory->TargetLocation = FVector::ZeroVector;
+                Memory->NavStartTime = -1.0f;
+                return;
+            }
+        }
+        
         float DistToTarget = FVector::Dist2D(PawnLoc, Memory->TargetLocation);
         if (DistToTarget < 200.0f)
         {

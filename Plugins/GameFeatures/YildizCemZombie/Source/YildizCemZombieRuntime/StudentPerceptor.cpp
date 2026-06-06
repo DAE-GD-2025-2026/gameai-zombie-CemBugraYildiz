@@ -332,22 +332,44 @@ void UStudentPerceptor::UpdateBlackboard()
             if (!Slot) { bHasInventorySpace = true; break; }
         }
     }
-
-    AActor* BestItem = nullptr;
-    if (bHasInventorySpace)
-    {
-        BestItem = FindBestItem();
-    }
-    else
+    if (ExplorationMemory)
     {
         for (AActor* Item : PerceivedItems)
         {
             if (!Item) continue;
             ABaseItem* BaseItem = Cast<ABaseItem>(Item);
-            if (BaseItem && BaseItem->GetItemType() == EItemType::Garbage)
+            if (BaseItem && BaseItem->GetItemType() != EItemType::Garbage)
+                ExplorationMemory->RecordKnownItem(Item);
+        }
+        ExplorationMemory->CleanupInvalidItems();
+    }
+    AActor* BestItem = nullptr;
+    if (bHasInventorySpace)
+    {
+        BestItem = FindBestItem();
+        if (!BestItem && ExplorationMemory)
+        {
+            float BestKnownPriority = 0.0f;
+            for (AActor* Item : ExplorationMemory->GetKnownWorldItems())
             {
-                BestItem = Item;
-                break;
+                if (!Item || !IsValid(Item)) continue;
+                if (PerceivedItems.Contains(Item)) continue;
+
+                ABaseItem* BaseItem = Cast<ABaseItem>(Item);
+                if (!BaseItem || BaseItem->GetItemType() == EItemType::Garbage) continue;
+
+                bool bInInventory = false;
+                if (InventoryComp)
+                    for (ABaseItem* InvItem : InventoryComp->GetInventory())
+                        if (InvItem == BaseItem) { bInInventory = true; break; }
+                if (bInInventory) continue;
+
+                const float Priority = CalculateItemPriority(Item, OwnerPawn->GetActorLocation());
+                if (Priority > BestKnownPriority)
+                {
+                    BestKnownPriority = Priority;
+                    BestItem = Item;
+                }
             }
         }
     }
@@ -628,12 +650,16 @@ AActor* UStudentPerceptor::FindBestItem() const
     for (AActor* Item : PerceivedItems)
     {
         if (!Item) continue;
-        if (InvItems)
-        {
-            ABaseItem* BaseItem = Cast<ABaseItem>(Item);
-            if (BaseItem && InvItems->Contains(BaseItem))
-                continue; 
-        }
+
+        ABaseItem* BaseItem = Cast<ABaseItem>(Item);
+        if (!BaseItem) continue;
+        if (BaseItem->GetItemType() == EItemType::Garbage) continue;
+        
+        const float* FailTime = FailedItemCooldowns.Find(BaseItem->GetUniqueID());
+        if (FailTime && GetWorld() && GetWorld()->GetTimeSeconds() - *FailTime < 30.0f)
+            continue;
+        
+        if (InvItems && InvItems->Contains(BaseItem)) continue;
 
         const float Priority = CalculateItemPriority(Item, PawnLocation);
         if (Priority > HighestPriority)
@@ -769,6 +795,13 @@ UBlackboardComponent* UStudentPerceptor::GetBlackboard() const
     
     return nullptr;
 }
+
+void UStudentPerceptor::MarkItemFailed(AActor* Item)
+{
+    if (!Item || !IsValid(Item) || !GetWorld()) return;
+    FailedItemCooldowns.Add(Item->GetUniqueID(), GetWorld()->GetTimeSeconds());
+}
+
 bool UStudentPerceptor::HasLineOfSight(const FVector& From, AActor* Target) const
 {
     if (!Target || !GetWorld()) return false;

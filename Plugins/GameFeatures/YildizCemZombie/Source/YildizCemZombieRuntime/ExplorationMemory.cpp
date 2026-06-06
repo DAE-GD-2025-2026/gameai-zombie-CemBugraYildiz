@@ -318,3 +318,16 @@ bool UExplorationMemory::IsHouseVisitedRecently(AActor* House, float TimeThresho
 	if (!VisitTime) return false;
 	return (GetWorld()->GetTimeSeconds() - *VisitTime) < TimeThreshold;
 }
+void UExplorationMemory::RecordKnownItem(AActor* Item)
+{
+	if (!Item || !IsValid(Item)) return;
+	KnownWorldItems.AddUnique(Item);
+}
+
+void UExplorationMemory::CleanupInvalidItems()
+{
+	KnownWorldItems.RemoveAll([](AActor* Item)
+	{
+		return !Item || !IsValid(Item);
+	});
+}

@@ -60,6 +60,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Perception")
 	UExplorationMemory* GetExplorationMemory() const { return ExplorationMemory; }
+	
+	void MarkItemFailed(AActor* Item);
 
 protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Perception")
@@ -107,6 +109,6 @@ private:
 	bool bUseManualScan = true;
 	float LastMemoryCleanupTime = 0.0f; 
 	int32 LastPerceivedHouseCount = 0;
-	
+	mutable TMap<uint32, float> FailedItemCooldowns;
 	bool HasLineOfSight(const FVector& From, AActor* Target) const;
 };

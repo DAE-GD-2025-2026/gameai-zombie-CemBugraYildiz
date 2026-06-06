@@ -121,19 +121,26 @@ public:
 		}
 		return Total;
 	}
+	
+	void RecordKnownItem(AActor* Item);
+	void CleanupInvalidItems(); 
+	const TArray<AActor*>& GetKnownWorldItems() const { return KnownWorldItems; }
 
 protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Exploration")
 	TArray<FVisitedLocation> VisitedLocations;
-
+	
 	UPROPERTY(EditAnywhere, Category = "Exploration")
 	int32 MaxVisitedLocations = 50;
-
+	
 	UPROPERTY(EditAnywhere, Category = "Exploration")
 	float VisitRadius = 800.0f;
-
+	
 	UPROPERTY(BlueprintReadOnly, Category = "Exploration")
 	TArray<FHouseCluster> HouseClusters;
+	
+	UPROPERTY()
+	TArray<AActor*> KnownWorldItems;
 	
 	UPROPERTY()
 	TMap<uint32, float> VisitedHouseMap;

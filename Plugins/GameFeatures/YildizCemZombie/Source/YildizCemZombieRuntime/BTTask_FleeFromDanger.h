@@ -40,8 +40,15 @@ public:
 	bool bUseSteeringBehavior = true;
 	
 	virtual EBTNodeResult::Type AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Weapon Seek")
+	float FleeWeaponSeekWeight = 1.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Weapon Seek")
+	float FleeWeaponGrabRadius = 350.0f;
 
 private:
 	AActor* FindNearestSafeHouse(UBlackboardComponent* Blackboard, const FVector& PawnLocation, AActor* Threat) const;
+	AActor* FindNearestKnownWeapon(APawn* Pawn, AActor* Threat) const;
 	void FleeUsingSteering(UBehaviorTreeComponent& OwnerComp, AActor* Threat);
 };
