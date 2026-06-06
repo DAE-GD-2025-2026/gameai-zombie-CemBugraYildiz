@@ -4,9 +4,7 @@
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "SteeringComponent.h"     
-#include "FleeSteering.h"    
-#include "Village/House/House.h"
-#include "EngineUtils.h"
+#include "FleeSteering.h"
 #include "GameFramework/FloatingPawnMovement.h"
 
 UBTTask_FleeFromDanger::UBTTask_FleeFromDanger()
@@ -14,8 +12,8 @@ UBTTask_FleeFromDanger::UBTTask_FleeFromDanger()
     NodeName = TEXT("Flee From Danger (Zombies)");
     FleeDistance = 1500.0f;
     SearchRadius = 3000.0f;
-    bPreferHousesWhenFleeing = true;
-    bUseSteeringBehavior = false; 
+    bPreferHousesWhenFleeing = false;
+    bUseSteeringBehavior = true; 
     
     bNotifyTick = true;
     
@@ -59,65 +57,54 @@ EBTNodeResult::Type UBTTask_FleeFromDanger::ExecuteTask(UBehaviorTreeComponent& 
     AIController->StopMovement();
     UFloatingPawnMovement* MoveComp = Cast<UFloatingPawnMovement>(Pawn->GetMovementComponent());
     if (MoveComp) MoveComp->MaxSpeed = 600.0f;
-
-    AActor* FleeHouse = FindBestFleeHouse(PawnLocation, DangerActor);
-    if (FleeHouse)
+    
+    if (bUseSteeringBehavior)
     {
-        AIController->MoveToActor(FleeHouse, 150.0f);
+        FleeUsingSteering(OwnerComp, DangerActor);
         return EBTNodeResult::InProgress;
     }
-
-    FVector TargetLocation;
-    bool bFoundTarget = false;
+    
+    const FVector FleeDirection = (PawnLocation - DangerLocation).GetSafeNormal();
+    FVector TargetLocation = PawnLocation + (FleeDirection * FleeDistance);
 
     if (bPreferHousesWhenFleeing)
     {
         AActor* SafeHouse = FindNearestSafeHouse(BlackboardComp, PawnLocation, DangerActor);
-        
         if (SafeHouse)
         {
             float HouseDistanceFromZombie = FVector::Dist(SafeHouse->GetActorLocation(), DangerLocation);
-            
             if (HouseDistanceFromZombie > CurrentDistance)
-            {
                 TargetLocation = SafeHouse->GetActorLocation();
-                bFoundTarget = true;
-            }
         }
-    }
-
-    if (!bFoundTarget)
-    {
-        const FVector FleeDirection = (PawnLocation - DangerLocation).GetSafeNormal();
-        TargetLocation = PawnLocation + (FleeDirection * FleeDistance);
-        bFoundTarget = true;
-        
     }
 
     UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
     if (!NavSys)
-    {
         return EBTNodeResult::Failed;
-    }
 
-    FNavLocation ResultLocation;
-    const bool bSuccess = NavSys->ProjectPointToNavigation(
-        TargetLocation,
-        ResultLocation,
-        FVector(SearchRadius, SearchRadius, SearchRadius)
-    );
+    const FVector PrimaryDir = (TargetLocation - PawnLocation).GetSafeNormal();
 
-    if (bSuccess)
+    const FVector FleeDirections[] = {
+        PrimaryDir,
+        FleeDirection.RotateAngleAxis( 45.0f, FVector::UpVector),
+        FleeDirection.RotateAngleAxis(-45.0f, FVector::UpVector),
+        FleeDirection.RotateAngleAxis( 90.0f, FVector::UpVector),
+    };
+
+    for (const FVector& Dir : FleeDirections)
     {
-        EPathFollowingRequestResult::Type MoveResult = AIController->MoveToLocation(
-            ResultLocation.Location,
-            100.0f
-        );
-        
+        FVector TryTarget = PawnLocation + Dir * FleeDistance;
+        FNavLocation NavLoc;
+
+        if (!NavSys->ProjectPointToNavigation(TryTarget, NavLoc, FVector(500.0f, 500.0f, 200.0f)))
+            continue;
+
+        if (FVector::Dist2D(NavLoc.Location, PawnLocation) < 300.0f)
+            continue;
+
+        EPathFollowingRequestResult::Type MoveResult = AIController->MoveToLocation(NavLoc.Location, 100.0f);
         if (MoveResult == EPathFollowingRequestResult::RequestSuccessful)
-        {
             return EBTNodeResult::InProgress;
-        }
     }
 
     return EBTNodeResult::Failed;
@@ -151,6 +138,9 @@ void UBTTask_FleeFromDanger::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* 
 
     if (ZombieDist > FleeDistance)
     {
+        USteeringComponent* SC = Pawn->FindComponentByClass<USteeringComponent>();
+        if (SC) { SC->ClearAllBehaviors(); SC->bAutoApplySteering = false; }
+
         BB->SetValueAsBool(FName("IsInDanger"), false);
         UFloatingPawnMovement* MC = Cast<UFloatingPawnMovement>(Pawn->GetMovementComponent());
         if (MC) MC->MaxSpeed = 400.0f;
@@ -158,17 +148,11 @@ void UBTTask_FleeFromDanger::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* 
         return;
     }
 
-    if (ZombieDist < ZombieFollowDistance)
-    {
-        AActor* NewHouse = FindBestFleeHouse(PawnLoc, DangerActor);
-        if (NewHouse)
-        {
-            AIController->MoveToActor(NewHouse, 150.0f);
-        }
-    }
-
     if (GetWorld()->GetTimeSeconds() - Memory->TaskStartTime > 15.0f)
     {
+        USteeringComponent* SC = Pawn->FindComponentByClass<USteeringComponent>();
+        if (SC) { SC->ClearAllBehaviors(); SC->bAutoApplySteering = false; }
+
         UFloatingPawnMovement* MC = Cast<UFloatingPawnMovement>(Pawn->GetMovementComponent());
         if (MC) MC->MaxSpeed = 400.0f;
         FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
@@ -227,40 +211,22 @@ AActor* UBTTask_FleeFromDanger::FindNearestSafeHouse(UBlackboardComponent* Black
             return SafeHouse;
         }
     }
-
     return nullptr;
 }
-AActor* UBTTask_FleeFromDanger::FindBestFleeHouse(const FVector& PawnLocation, AActor* Zombie) const
+EBTNodeResult::Type UBTTask_FleeFromDanger::AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
 {
-    if (!Zombie || !GetWorld()) return nullptr;
-
-    const FVector ZombieLoc = Zombie->GetActorLocation();
-    const FVector FleeDir = (PawnLocation - ZombieLoc).GetSafeNormal();
-
-    AActor* BestHouse = nullptr;
-    float BestScore = -FLT_MAX;
-
-    for (TActorIterator<AHouse> It(GetWorld()); It; ++It)
+    AAIController* AIController = OwnerComp.GetAIOwner();
+    if (AIController && AIController->GetPawn())
     {
-        AHouse* House = *It;
-        const FVector HouseLoc = House->GetActorLocation();
-        const float DistToHouse = FVector::Dist2D(PawnLocation, HouseLoc);
-        const float HouseDistFromZombie = FVector::Dist2D(HouseLoc, ZombieLoc);
-
-        if (DistToHouse > 4000.0f) continue;
-
-        const FVector ToHouse = (HouseLoc - PawnLocation).GetSafeNormal();
-        const float DotWithFlee = FVector::DotProduct(ToHouse, FleeDir);
-
-        float Score = (DotWithFlee * 800.0f)
-                    + HouseDistFromZombie
-                    - (DistToHouse * 0.5f);
-
-        if (Score > BestScore)
+        APawn* Pawn = AIController->GetPawn();
+        USteeringComponent* SC = Pawn->FindComponentByClass<USteeringComponent>();
+        if (SC)
         {
-            BestScore = Score;
-            BestHouse = House;
+            SC->ClearAllBehaviors();
+            SC->bAutoApplySteering = false;
         }
+        UFloatingPawnMovement* MC = Cast<UFloatingPawnMovement>(Pawn->GetMovementComponent());
+        if (MC) MC->MaxSpeed = 400.0f;
     }
-    return BestHouse;
+    return Super::AbortTask(OwnerComp, NodeMemory);
 }

@@ -304,5 +304,17 @@ void UExplorationMemory::CleanupOldMemories(float MaxAge)
 	{
 		return (CurrentTime - Loc.VisitTime) > MaxAge;
 	});
+}
+void UExplorationMemory::MarkHouseVisited(AActor* House)
+{
+	if (!House || !GetWorld()) return;
+	VisitedHouseMap.Add(House->GetUniqueID(), GetWorld()->GetTimeSeconds());
+}
 
+bool UExplorationMemory::IsHouseVisitedRecently(AActor* House, float TimeThreshold) const
+{
+	if (!House || !GetWorld()) return false;
+	const float* VisitTime = VisitedHouseMap.Find(House->GetUniqueID());
+	if (!VisitTime) return false;
+	return (GetWorld()->GetTimeSeconds() - *VisitTime) < TimeThreshold;
 }

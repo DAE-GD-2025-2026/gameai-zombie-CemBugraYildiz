@@ -203,6 +203,7 @@ void UBTTask_MoveToRandomLocation::ExploreUsingWander(UBehaviorTreeComponent& Ow
     }
 
     APawn* Pawn = AIController->GetPawn();
+    AIController->StopMovement();
 
     USteeringComponent* SteeringComp = Pawn->FindComponentByClass<USteeringComponent>();
     if (!SteeringComp)
@@ -315,4 +316,22 @@ bool UBTTask_MoveToRandomLocation::IsLocationSuitableForExploration(UExploration
     }
 
     return true;
+}
+EBTNodeResult::Type UBTTask_MoveToRandomLocation::AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
+{
+    if (bUseWanderSteering)
+    {
+        AAIController* AIController = OwnerComp.GetAIOwner();
+        if (AIController && AIController->GetPawn())
+        {
+            APawn* Pawn = AIController->GetPawn();
+            USteeringComponent* SC = Pawn->FindComponentByClass<USteeringComponent>();
+            if (SC)
+            {
+                SC->ClearAllBehaviors();
+                SC->bAutoApplySteering = false;
+            }
+        }
+    }
+    return Super::AbortTask(OwnerComp, NodeMemory);
 }

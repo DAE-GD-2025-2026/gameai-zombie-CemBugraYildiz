@@ -3,9 +3,11 @@
 #include "BehaviorTree/BlackboardComponent.h"
 #include "GameFramework/Actor.h"
 #include "Components/ActorComponent.h"
-#include "Navigation/PathFollowingComponent.h"
 #include "Common/InventoryComponent.h"
 #include "Items/BaseItem.h"
+#include "SteeringComponent.h"
+#include "SeekSteering.h"
+#include "GameFramework/FloatingPawnMovement.h"
 
 UBTTask_GrabItem::UBTTask_GrabItem()
 {
@@ -101,22 +103,35 @@ EBTNodeResult::Type UBTTask_GrabItem::ExecuteTask(UBehaviorTreeComponent& OwnerC
             return EBTNodeResult::Failed;
         }
     }
-    else 
+    else
     {
-        FAIMoveRequest MoveRequest(TargetItem);
-        MoveRequest.SetAcceptanceRadius(GrabDistance - 50.0f);
-        
-        FPathFollowingRequestResult MoveResult = AIController->MoveTo(MoveRequest);
-        
-        if (MoveResult.Code == EPathFollowingRequestResult::RequestSuccessful)
+        AIController->StopMovement();
+
+        USteeringComponent* SteeringComp = Pawn->FindComponentByClass<USteeringComponent>();
+        if (!SteeringComp)
         {
-            
-            return EBTNodeResult::InProgress;
+            SteeringComp = NewObject<USteeringComponent>(Pawn);
+            SteeringComp->RegisterComponent();
+            Pawn->AddInstanceComponent(SteeringComp);
         }
-        else
-        {
-            return EBTNodeResult::Failed;
-        }
+        SteeringComp->ClearAllBehaviors();
+
+        USeekSteering* SeekBehavior = NewObject<USeekSteering>();
+        SeekBehavior->SetTargetActor(TargetItem);
+        SeekBehavior->bEnableArrival = true;
+        SeekBehavior->ArrivalRadius = GrabDistance * 2.0f;
+        SeekBehavior->MaxSpeed = 400.0f;
+        SeekBehavior->MaxForce = 600.0f;
+        SeekBehavior->Weight = 1.0f;
+
+        SteeringComp->AddSteeringBehavior(SeekBehavior);
+        SteeringComp->bAutoApplySteering = true;
+        SteeringComp->MaxSpeed = 400.0f;
+
+        UFloatingPawnMovement* MoveComp = Cast<UFloatingPawnMovement>(Pawn->GetMovementComponent());
+        if (MoveComp) MoveComp->MaxSpeed = 400.0f;
+
+        return EBTNodeResult::InProgress;
     }
 }
 
@@ -130,21 +145,24 @@ void UBTTask_GrabItem::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMe
     }
 
     UBlackboardComponent* BlackboardComp = OwnerComp.GetBlackboardComponent();
-    /*if (!BlackboardComp)
+    if (!BlackboardComp)
     {
         FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
         return;
-    }*/
+    }
 
     FGrabItemTaskMemory* Memory = CastInstanceNodeMemory<FGrabItemTaskMemory>(NodeMemory);
     AActor* TargetItem = Memory->CachedTarget.Get();
     APawn* Pawn = AIController->GetPawn();
 
-    /*if (!TargetItem || !TargetItem->IsValidLowLevel())
+    if (!TargetItem || !IsValid(TargetItem))
     {
+        USteeringComponent* SC = Pawn->FindComponentByClass<USteeringComponent>();
+        if (SC) { SC->ClearAllBehaviors(); SC->bAutoApplySteering = false; }
+        BlackboardComp->ClearValue(FName("BestItem"));
         FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
         return;
-    }*/
+    }
 
     const float Distance = FVector::Dist(Pawn->GetActorLocation(), TargetItem->GetActorLocation());
     float CurrentTime = GetWorld()->GetTimeSeconds();
@@ -152,6 +170,8 @@ void UBTTask_GrabItem::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMe
 
     if (ElapsedTime > 8.0f)
     {
+        USteeringComponent* SC = Pawn->FindComponentByClass<USteeringComponent>();
+        if (SC) { SC->ClearAllBehaviors(); SC->bAutoApplySteering = false; }
         BlackboardComp->ClearValue(FName("BestItem"));
         FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
         return;
@@ -162,13 +182,19 @@ void UBTTask_GrabItem::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMe
         float PawnSpeed = Pawn->GetVelocity().Size();
         if (PawnSpeed < 10.0f && ElapsedTime > 2.0f)
         {
+            USteeringComponent* SC = Pawn->FindComponentByClass<USteeringComponent>();
+            if (SC) { SC->ClearAllBehaviors(); SC->bAutoApplySteering = false; }
             BlackboardComp->ClearValue(FName("BestItem"));
             FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
             return;
         }
         return;
     }
-
+    {
+        USteeringComponent* SC = Pawn->FindComponentByClass<USteeringComponent>();
+        if (SC) { SC->ClearAllBehaviors(); SC->bAutoApplySteering = false; }
+        AIController->StopMovement();
+    }
     UInventoryComponent* InventoryComp = Pawn->FindComponentByClass<UInventoryComponent>();
     if (!InventoryComp)
     {
@@ -229,6 +255,22 @@ int32 UBTTask_GrabItem::FindEmptySlot(UInventoryComponent* InventoryComp) const
             return i;
         }
     }
-    
     return -1; 
+}
+EBTNodeResult::Type UBTTask_GrabItem::AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
+{
+    AAIController* AIController = OwnerComp.GetAIOwner();
+    if (AIController && AIController->GetPawn())
+    {
+        APawn* Pawn = AIController->GetPawn();
+        USteeringComponent* SC = Pawn->FindComponentByClass<USteeringComponent>();
+        if (SC)
+        {
+            SC->ClearAllBehaviors();
+            SC->bAutoApplySteering = false;
+        }
+        UFloatingPawnMovement* MC = Cast<UFloatingPawnMovement>(Pawn->GetMovementComponent());
+        if (MC) MC->MaxSpeed = 400.0f;
+    }
+    return Super::AbortTask(OwnerComp, NodeMemory);
 }

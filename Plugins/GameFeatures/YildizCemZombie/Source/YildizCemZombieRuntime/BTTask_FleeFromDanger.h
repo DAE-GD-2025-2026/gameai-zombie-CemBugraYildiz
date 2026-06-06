@@ -35,15 +35,13 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
 	bool bPreferHousesWhenFleeing = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
-	float ZombieFollowDistance = 350.0f;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Steering")
 	bool bUseSteeringBehavior = true;
+	
+	virtual EBTNodeResult::Type AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
 
 private:
 	AActor* FindNearestSafeHouse(UBlackboardComponent* Blackboard, const FVector& PawnLocation, AActor* Threat) const;
-	AActor* FindBestFleeHouse(const FVector& PawnLocation, AActor* Zombie) const;
 	void FleeUsingSteering(UBehaviorTreeComponent& OwnerComp, AActor* Threat);
 };

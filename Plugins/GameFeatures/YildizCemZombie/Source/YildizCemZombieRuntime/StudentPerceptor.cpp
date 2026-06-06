@@ -103,8 +103,7 @@ void UStudentPerceptor::ScanHousesAndPurgeZones()
 
     for (TActorIterator<AHouse> It(GetWorld()); It; ++It)
     {
-        if (FVector::Dist(PawnLocation, It->GetActorLocation()) <= ScanRadius)
-            PerceivedHouses.Add(*It);
+        PerceivedHouses.Add(*It);
     }
 
     for (TActorIterator<APurgeZone> It(GetWorld()); It; ++It)
@@ -613,38 +612,36 @@ AActor* UStudentPerceptor::FindMostDangerousZombie() const
 
 AActor* UStudentPerceptor::FindBestItem() const
 {
-    if (PerceivedItems.Num() == 0)
-    {
-        return nullptr;
-    }
+    if (PerceivedItems.Num() == 0) return nullptr;
 
     APawn* OwnerPawn = Cast<APawn>(GetOwner());
-    if (!OwnerPawn)
-    {
-        return nullptr;
-    }
+    if (!OwnerPawn) return nullptr;
 
     const FVector PawnLocation = OwnerPawn->GetActorLocation();
-    
+
+    UInventoryComponent* InvComp = OwnerPawn->FindComponentByClass<UInventoryComponent>();
+    const TArray<ABaseItem*>* InvItems = InvComp ? &InvComp->GetInventory() : nullptr;
+
     AActor* BestItem = nullptr;
     float HighestPriority = -FLT_MAX;
 
     for (AActor* Item : PerceivedItems)
     {
-        if (!Item)
+        if (!Item) continue;
+        if (InvItems)
         {
-            continue;
+            ABaseItem* BaseItem = Cast<ABaseItem>(Item);
+            if (BaseItem && InvItems->Contains(BaseItem))
+                continue; 
         }
 
         const float Priority = CalculateItemPriority(Item, PawnLocation);
-        
         if (Priority > HighestPriority)
         {
             HighestPriority = Priority;
             BestItem = Item;
         }
     }
-
     return BestItem;
 }
 

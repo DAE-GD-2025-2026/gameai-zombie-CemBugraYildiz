@@ -81,6 +81,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Exploration")
 	FVector GetLeastVisitedAreaDirection(const FVector& CurrentLocation, float SearchRadius = 3000.0f) const;
 
+	void MarkHouseVisited(AActor* House);
+	bool IsHouseVisitedRecently(AActor* House, float TimeThreshold) const;
+	
 	UFUNCTION(BlueprintCallable, Category = "Exploration")
 	void UpdateHouseClusters(const TArray<AActor*>& PerceivedHouses);
 
@@ -131,6 +134,9 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Exploration")
 	TArray<FHouseCluster> HouseClusters;
+	
+	UPROPERTY()
+	TMap<uint32, float> VisitedHouseMap;
 
 	UPROPERTY(EditAnywhere, Category = "Exploration")
 	float ClusterRadius = 2000.0f;

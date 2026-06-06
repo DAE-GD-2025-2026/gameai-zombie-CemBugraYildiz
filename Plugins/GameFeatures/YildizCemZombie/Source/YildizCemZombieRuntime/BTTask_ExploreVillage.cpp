@@ -14,7 +14,7 @@ UBTTask_ExploreVillage::UBTTask_ExploreVillage()
 }
 
 bool UBTTask_ExploreVillage::ExploreCluster(UBehaviorTreeComponent& OwnerComp,
-    int32 ClusterIndex, const FVector& CurrentLocation, FVector& OutTargetLocation)
+    int32 ClusterIndex, const FVector& CurrentLocation, FVector& OutTargetLocation, AActor*& OutTargetHouse)
 {
     AAIController* AIController = OwnerComp.GetAIOwner();
     if (!AIController || !AIController->GetPawn()) return false;
@@ -28,13 +28,14 @@ bool UBTTask_ExploreVillage::ExploreCluster(UBehaviorTreeComponent& OwnerComp,
 
     float MinDistance = FLT_MAX;
     OutTargetLocation = FVector::ZeroVector;
+    OutTargetHouse = nullptr;
 
     for (AActor* House : Cluster->Houses)
     {
         if (!House) continue;
         FVector HouseLoc = House->GetActorLocation();
 
-        if (ExpMemory->IsLocationVisitedRecently(HouseLoc, 300.0f, 60.0f))
+        if (ExpMemory->IsHouseVisitedRecently(House, 60.0f))
             continue;
 
         float Distance = FVector::Dist2D(CurrentLocation, HouseLoc);
@@ -42,6 +43,7 @@ bool UBTTask_ExploreVillage::ExploreCluster(UBehaviorTreeComponent& OwnerComp,
         {
             MinDistance = Distance;
             OutTargetLocation = HouseLoc;
+            OutTargetHouse = House; 
         }
     }
 
@@ -73,9 +75,12 @@ EBTNodeResult::Type UBTTask_ExploreVillage::ExecuteTask(UBehaviorTreeComponent& 
     int32 ClusterIdx;
     if (ExpMemory->IsInsideAnyCluster(CurrentLocation, ClusterIdx))
     {
-        bFoundTarget = ExploreCluster(OwnerComp, ClusterIdx, CurrentLocation, InitialTarget);
+        AActor* TargetHouse = nullptr;
+        bFoundTarget = ExploreCluster(OwnerComp, ClusterIdx, CurrentLocation, InitialTarget, TargetHouse);
         if (!bFoundTarget)
             ExpMemory->MarkClusterAsExplored(ClusterIdx);
+        else
+            Memory->TargetHouseActor = TargetHouse;
     }
 
     if (!bFoundTarget)
@@ -101,8 +106,14 @@ EBTNodeResult::Type UBTTask_ExploreVillage::ExecuteTask(UBehaviorTreeComponent& 
     }
     else
     {
-        Memory->bIsWaiting = true;
-        Memory->WaitStartTime = GetWorld()->GetTimeSeconds();
+        FNavLocation RandomLoc;
+        if (NavSys && NavSys->GetRandomPointInNavigableRadius(CurrentLocation, 2000.0f, RandomLoc))
+        {
+            AIController->MoveToLocation(RandomLoc.Location, 100.0f);
+            Memory->TargetLocation = RandomLoc.Location;
+            return EBTNodeResult::InProgress; 
+        }
+        return EBTNodeResult::Failed;  
     }
 
     return EBTNodeResult::InProgress; 
@@ -121,6 +132,8 @@ void UBTTask_ExploreVillage::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* 
     UBlackboardComponent* BB = OwnerComp.GetBlackboardComponent();
     UExplorationMemory* ExpMemory = Pawn->FindComponentByClass<UExplorationMemory>();
     FExploreTaskMemory* Memory = CastInstanceNodeMemory<FExploreTaskMemory>(NodeMemory);
+    const FVector PawnLoc = Pawn->GetActorLocation();
+    const float CurrentTime = GetWorld()->GetTimeSeconds();
 
     if (BB && BB->GetValueAsObject(FName("BestItem")) != nullptr)
     {
@@ -128,66 +141,91 @@ void UBTTask_ExploreVillage::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* 
         return;
     }
 
-    if (Memory->bIsWaiting)
+    if (Memory->bJustArrived)
     {
-        if (GetWorld()->GetTimeSeconds() - Memory->WaitStartTime >= WaitTimeAfterFullExploration)
+        if (CurrentTime - Memory->ArrivalTime >= 1.0f)
         {
-            FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
+            Memory->bJustArrived = false;
+            Memory->TargetLocation = FVector::ZeroVector;
         }
-        return; 
+        else
+        {
+            return;
+        }
     }
-
-    const FVector PawnLoc = Pawn->GetActorLocation();
-    if (Memory->TargetLocation != FVector::ZeroVector)
+    else if (Memory->TargetLocation != FVector::ZeroVector)
     {
         float DistToTarget = FVector::Dist2D(PawnLoc, Memory->TargetLocation);
-
-        if (DistToTarget < 200.0f)  
+        if (DistToTarget < 200.0f)
         {
-            ExpMemory->RecordVisitedLocation(Memory->TargetLocation); 
-
-            FVector NextTarget;
-            bool bFoundNext = false;
-
-            int32 ClusterIdx;
-            if (ExpMemory->IsInsideAnyCluster(PawnLoc, ClusterIdx))
+            if (IsValid(Memory->TargetHouseActor))
             {
-                bFoundNext = ExploreCluster(OwnerComp, ClusterIdx, PawnLoc, NextTarget);
-                if (!bFoundNext)
-                {
-                    if (bMarkAsExploredWhenDone)
-                        ExpMemory->MarkClusterAsExplored(ClusterIdx);
-                }
+                ExpMemory->MarkHouseVisited(Memory->TargetHouseActor);
+                Memory->TargetHouseActor = nullptr;
             }
-
-            if (!bFoundNext)
-            {
-                int32 NextCluster = ExpMemory->FindNearestUnexploredClusterIndex(PawnLoc);
-                if (NextCluster >= 0)
-                {
-                    FVector Center; float R; int32 HC; bool bEx;
-                    ExpMemory->GetClusterInfo(NextCluster, Center, R, HC, bEx);
-                    NextTarget = Center;
-                    bFoundNext = true;
-                }
-            }
-
-            if (bFoundNext)
-            {
-                UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
-                FNavLocation NavLoc;
-                if (NavSys && NavSys->ProjectPointToNavigation(NextTarget, NavLoc, FVector(500.0f)))
-                {
-                    AIController->MoveToLocation(NavLoc.Location, HouseVisitDistance);
-                    Memory->TargetLocation = NavLoc.Location;
-                }
-            }
-            else
-            {
-                AIController->StopMovement();
-                Memory->bIsWaiting = true;
-                Memory->WaitStartTime = GetWorld()->GetTimeSeconds();
-            }
+            ExpMemory->RecordVisitedLocation(Memory->TargetLocation);
+            AIController->StopMovement();
+            Memory->bJustArrived = true;
+            Memory->ArrivalTime = CurrentTime;
+            Memory->NavStartTime = -1.0f;
         }
+        else if (Memory->NavStartTime >= 0.0f && CurrentTime - Memory->NavStartTime > 8.0f)
+        {
+            Memory->TargetLocation = FVector::ZeroVector;
+            Memory->NavStartTime = -1.0f;
+            AIController->StopMovement();
+        }
+        return;
+    }
+
+    FVector NextTarget;
+    bool bFoundNext = false;
+
+    AActor* TargetHouse = nullptr;
+    int32 ClusterIdx;
+    if (ExpMemory->IsInsideAnyCluster(PawnLoc, ClusterIdx))
+    {
+        bFoundNext = ExploreCluster(OwnerComp, ClusterIdx, PawnLoc, NextTarget, TargetHouse);
+        if (!bFoundNext && bMarkAsExploredWhenDone)
+            ExpMemory->MarkClusterAsExplored(ClusterIdx);
+    }
+
+    if (!bFoundNext)
+    {
+        int32 NextCluster = ExpMemory->FindNearestUnexploredClusterIndex(PawnLoc);
+        if (NextCluster >= 0)
+        {
+            FVector Center; float R; int32 HC; bool bEx;
+            ExpMemory->GetClusterInfo(NextCluster, Center, R, HC, bEx);
+            NextTarget = Center;
+            bFoundNext = true;
+        }
+    }
+
+    if (bFoundNext)
+    {
+        UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+        FNavLocation NavLoc;
+        if (NavSys && NavSys->ProjectPointToNavigation(NextTarget, NavLoc, FVector(500.0f)))
+        {
+            AIController->MoveToLocation(NavLoc.Location, HouseVisitDistance);
+            Memory->TargetLocation = NavLoc.Location;
+            Memory->TargetHouseActor = TargetHouse;
+            Memory->NavStartTime = CurrentTime;
+            return;
+        }
+    }
+    UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+    FNavLocation RandomLoc;
+    if (NavSys && NavSys->GetRandomPointInNavigableRadius(PawnLoc, 2000.0f, RandomLoc))
+    {
+        AIController->MoveToLocation(RandomLoc.Location, 100.0f);
+        Memory->TargetLocation = RandomLoc.Location;
+        Memory->TargetHouseActor = nullptr;
+        Memory->NavStartTime = CurrentTime;
+    }
+    else
+    {
+        FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
     }
 }

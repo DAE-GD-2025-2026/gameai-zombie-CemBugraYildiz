@@ -1,8 +1,8 @@
 ﻿#include "SteeringComponent.h"
 #include "SteeringBehavior.h"
 #include "GameFramework/Pawn.h"
-#include "GameFramework/CharacterMovementComponent.h"
 #include "DrawDebugHelpers.h"
+#include "GameFramework/FloatingPawnMovement.h"
 
 USteeringComponent::USteeringComponent()
 {
@@ -113,26 +113,22 @@ void USteeringComponent::ApplySteeringForce(const FVector& SteeringForce, float 
 {
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
 	if (!OwnerPawn)
-	{
 		return;
-	}
 
 	FVector Acceleration = SteeringForce / Mass;
-
 	CurrentVelocity += Acceleration * DeltaTime;
-
-	if (CurrentVelocity.Size() > MaxSpeed)
-	{
+	CurrentVelocity.Z = 0.0f;
+	if (CurrentVelocity.SizeSquared() > MaxSpeed * MaxSpeed)
 		CurrentVelocity = CurrentVelocity.GetSafeNormal() * MaxSpeed;
-	}
-	
-	CurrentVelocity.Z = 0.0f; 
-	FVector NewLocation = OwnerPawn->GetActorLocation() + (CurrentVelocity * DeltaTime);
-	NewLocation.Z = OwnerPawn->GetActorLocation().Z; 
-	OwnerPawn->SetActorLocation(NewLocation, true);
 
-	if (!CurrentVelocity.IsNearlyZero())
+	if (!CurrentVelocity.IsNearlyZero(10.0f))
 	{
+		UFloatingPawnMovement* FPM = Cast<UFloatingPawnMovement>(OwnerPawn->GetMovementComponent());
+		if (FPM)
+			FPM->MaxSpeed = MaxSpeed;
+
+		OwnerPawn->AddMovementInput(CurrentVelocity.GetSafeNormal(), 1.0f);
+
 		FRotator NewRotation = CurrentVelocity.Rotation();
 		NewRotation.Pitch = 0.0f;
 		NewRotation.Roll = 0.0f;

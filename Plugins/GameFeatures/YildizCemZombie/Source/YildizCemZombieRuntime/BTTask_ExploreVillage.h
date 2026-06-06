@@ -4,18 +4,17 @@
 #include "BehaviorTree/BTTaskNode.h"
 #include "BTTask_ExploreVillage.generated.h"
 
-// NodeMemory: InProgress görev boyunca durum tutmak için
 struct FExploreTaskMemory
 {
-	FVector TargetLocation;   // Şu an gidilen nokta
-	float   WaitStartTime;    // Bekleme başlangıç zamanı
-	bool    bIsWaiting;       // Tüm evler gezildi, bekleme modunda mı
+	FVector  TargetLocation;
+	float    ArrivalTime;    
+	bool     bJustArrived;   
+	float    NavStartTime;
+	AActor*  TargetHouseActor;
 
 	FExploreTaskMemory()
-		: TargetLocation(FVector::ZeroVector)
-		, WaitStartTime(-1.0f)
-		, bIsWaiting(false)
-	{}
+		: TargetLocation(FVector::ZeroVector), ArrivalTime(-1.0f), bJustArrived(false),
+		  NavStartTime(-1.0f), TargetHouseActor(nullptr) {}
 };
 
 UCLASS()
@@ -39,10 +38,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
 	bool bMarkAsExploredWhenDone = true;
 
-	UPROPERTY(EditAnywhere, Category = "Exploration")
-	float WaitTimeAfterFullExploration = 60.0f;
-
 private:
 	bool ExploreCluster(UBehaviorTreeComponent& OwnerComp, int32 ClusterIndex,
-						const FVector& CurrentLocation, FVector& OutTargetLocation);
+					const FVector& CurrentLocation, FVector& OutTargetLocation, AActor*& OutTargetHouse);
 };
