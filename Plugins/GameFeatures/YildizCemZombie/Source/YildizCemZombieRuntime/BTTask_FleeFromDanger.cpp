@@ -4,7 +4,10 @@
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "SteeringComponent.h"     
-#include "FleeSteering.h"            
+#include "FleeSteering.h"    
+#include "Village/House/House.h"
+#include "EngineUtils.h"
+#include "GameFramework/FloatingPawnMovement.h"
 
 UBTTask_FleeFromDanger::UBTTask_FleeFromDanger()
 {
@@ -12,7 +15,7 @@ UBTTask_FleeFromDanger::UBTTask_FleeFromDanger()
     FleeDistance = 1500.0f;
     SearchRadius = 3000.0f;
     bPreferHousesWhenFleeing = true;
-    bUseSteeringBehavior = true; 
+    bUseSteeringBehavior = false; 
     
     bNotifyTick = true;
     
@@ -53,10 +56,15 @@ EBTNodeResult::Type UBTTask_FleeFromDanger::ExecuteTask(UBehaviorTreeComponent& 
         return EBTNodeResult::Succeeded;
     }
 
-    if (bUseSteeringBehavior)
+    AIController->StopMovement();
+    UFloatingPawnMovement* MoveComp = Cast<UFloatingPawnMovement>(Pawn->GetMovementComponent());
+    if (MoveComp) MoveComp->MaxSpeed = 600.0f;
+
+    AActor* FleeHouse = FindBestFleeHouse(PawnLocation, DangerActor);
+    if (FleeHouse)
     {
-        FleeUsingSteering(OwnerComp, DangerActor);
-        return EBTNodeResult::InProgress; 
+        AIController->MoveToActor(FleeHouse, 150.0f);
+        return EBTNodeResult::InProgress;
     }
 
     FVector TargetLocation;
@@ -117,62 +125,53 @@ EBTNodeResult::Type UBTTask_FleeFromDanger::ExecuteTask(UBehaviorTreeComponent& 
 
 void UBTTask_FleeFromDanger::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
 {
-    Super::TickTask(OwnerComp, NodeMemory, DeltaSeconds);
-
-    UBlackboardComponent* BlackboardComp = OwnerComp.GetBlackboardComponent();
     AAIController* AIController = OwnerComp.GetAIOwner();
-    
-    if (!BlackboardComp || !AIController || !AIController->GetPawn())
+    if (!AIController || !AIController->GetPawn())
     {
         FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
         return;
     }
 
-    AActor* DangerActor = Cast<AActor>(BlackboardComp->GetValueAsObject(DangerActorKey.SelectedKeyName));
+    UBlackboardComponent* BB = OwnerComp.GetBlackboardComponent();
     APawn* Pawn = AIController->GetPawn();
     FFleeTaskMemory* Memory = CastInstanceNodeMemory<FFleeTaskMemory>(NodeMemory);
-    float CurrentTime = GetWorld()->GetTimeSeconds();
-    float ElapsedTime = CurrentTime - Memory->TaskStartTime;
 
-    if (ElapsedTime > 10.0f)
-    {
-        USteeringComponent* SteeringComp = Pawn->FindComponentByClass<USteeringComponent>();
-        if (SteeringComp) SteeringComp->ClearAllBehaviors();
-        FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
-        return;
-    }
-
-    if (ElapsedTime > 2.0f)
-    {
-        float PawnSpeed = Pawn->GetVelocity().Size();
-        if (PawnSpeed < 10.0f)
-        {
-            USteeringComponent* SteeringComp = Pawn->FindComponentByClass<USteeringComponent>();
-            if (SteeringComp) SteeringComp->ClearAllBehaviors();
-            FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
-            return;
-        }
-    }
-
+    AActor* DangerActor = Cast<AActor>(BB->GetValueAsObject(DangerActorKey.SelectedKeyName));
     if (!DangerActor)
     {
-        FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+        BB->SetValueAsBool(FName("IsInDanger"), false);
+        UFloatingPawnMovement* MC = Cast<UFloatingPawnMovement>(Pawn->GetMovementComponent());
+        if (MC) MC->MaxSpeed = 400.0f;
+        FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
         return;
     }
 
-    const float Distance = FVector::Dist(Pawn->GetActorLocation(), DangerActor->GetActorLocation());
-    
-    if (Distance > FleeDistance)
+    const FVector PawnLoc = Pawn->GetActorLocation();
+    const float ZombieDist = FVector::Dist(PawnLoc, DangerActor->GetActorLocation());
+
+    if (ZombieDist > FleeDistance)
     {
-        BlackboardComp->SetValueAsBool(FName("IsInDanger"), false);
-        
-        USteeringComponent* SteeringComp = Pawn->FindComponentByClass<USteeringComponent>();
-        if (SteeringComp)
-        {
-            SteeringComp->ClearAllBehaviors();
-        }
-        
+        BB->SetValueAsBool(FName("IsInDanger"), false);
+        UFloatingPawnMovement* MC = Cast<UFloatingPawnMovement>(Pawn->GetMovementComponent());
+        if (MC) MC->MaxSpeed = 400.0f;
         FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
+        return;
+    }
+
+    if (ZombieDist < ZombieFollowDistance)
+    {
+        AActor* NewHouse = FindBestFleeHouse(PawnLoc, DangerActor);
+        if (NewHouse)
+        {
+            AIController->MoveToActor(NewHouse, 150.0f);
+        }
+    }
+
+    if (GetWorld()->GetTimeSeconds() - Memory->TaskStartTime > 15.0f)
+    {
+        UFloatingPawnMovement* MC = Cast<UFloatingPawnMovement>(Pawn->GetMovementComponent());
+        if (MC) MC->MaxSpeed = 400.0f;
+        FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
     }
 }
 
@@ -230,4 +229,38 @@ AActor* UBTTask_FleeFromDanger::FindNearestSafeHouse(UBlackboardComponent* Black
     }
 
     return nullptr;
+}
+AActor* UBTTask_FleeFromDanger::FindBestFleeHouse(const FVector& PawnLocation, AActor* Zombie) const
+{
+    if (!Zombie || !GetWorld()) return nullptr;
+
+    const FVector ZombieLoc = Zombie->GetActorLocation();
+    const FVector FleeDir = (PawnLocation - ZombieLoc).GetSafeNormal();
+
+    AActor* BestHouse = nullptr;
+    float BestScore = -FLT_MAX;
+
+    for (TActorIterator<AHouse> It(GetWorld()); It; ++It)
+    {
+        AHouse* House = *It;
+        const FVector HouseLoc = House->GetActorLocation();
+        const float DistToHouse = FVector::Dist2D(PawnLocation, HouseLoc);
+        const float HouseDistFromZombie = FVector::Dist2D(HouseLoc, ZombieLoc);
+
+        if (DistToHouse > 4000.0f) continue;
+
+        const FVector ToHouse = (HouseLoc - PawnLocation).GetSafeNormal();
+        const float DotWithFlee = FVector::DotProduct(ToHouse, FleeDir);
+
+        float Score = (DotWithFlee * 800.0f)
+                    + HouseDistFromZombie
+                    - (DistToHouse * 0.5f);
+
+        if (Score > BestScore)
+        {
+            BestScore = Score;
+            BestHouse = House;
+        }
+    }
+    return BestHouse;
 }

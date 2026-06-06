@@ -9,7 +9,7 @@ UExplorationMemory::UExplorationMemory()
 	MaxVisitedLocations = 50;
 	VisitRadius = 800.0f;
 	ClusterRadius = 2000.0f;
-	MinHousesForCluster = 2;
+	MinHousesForCluster = 1;
 }
 
 void UExplorationMemory::BeginPlay()
@@ -227,7 +227,10 @@ int32 UExplorationMemory::FindNearestUnexploredClusterIndex(const FVector& Curre
 		
 		if (Cluster.bFullyExplored)
 		{
-			continue;
+			if (GetWorld()->GetTimeSeconds() - HouseClusters[i].LastVisitTime > 60.0f)
+				HouseClusters[i].bFullyExplored = false;
+			else
+				continue;
 		}
 
 		const float Distance = FVector::Dist(CurrentLocation, Cluster.CenterLocation);
@@ -267,6 +270,7 @@ void UExplorationMemory::MarkClusterAsExplored(int32 ClusterIndex)
 	if (ClusterIndex >= 0 && ClusterIndex < HouseClusters.Num())
 	{
 		HouseClusters[ClusterIndex].bFullyExplored = true;
+		HouseClusters[ClusterIndex].LastVisitTime = GetWorld()->GetTimeSeconds();
 	}
 }
 
