@@ -1,7 +1,6 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "UObject/NoExportTypes.h"
 #include "SteeringBehavior.generated.h"
 
 UCLASS(Abstract, Blueprintable)

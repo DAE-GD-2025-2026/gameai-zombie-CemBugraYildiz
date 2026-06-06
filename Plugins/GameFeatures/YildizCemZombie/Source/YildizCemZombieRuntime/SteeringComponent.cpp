@@ -56,6 +56,14 @@ void USteeringComponent::RemoveSteeringBehavior(USteeringBehavior* Behavior)
 void USteeringComponent::ClearAllBehaviors()
 {
 	SteeringBehaviors.Empty();
+	CurrentVelocity = FVector::ZeroVector;
+
+	APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (OwnerPawn)
+	{
+		UFloatingPawnMovement* FPM = Cast<UFloatingPawnMovement>(OwnerPawn->GetMovementComponent());
+		if (FPM) FPM->MaxSpeed = 400.0f;
+	}
 }
 
 FVector USteeringComponent::CalculateTotalSteering()

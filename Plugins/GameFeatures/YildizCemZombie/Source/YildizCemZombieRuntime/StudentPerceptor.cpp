@@ -538,6 +538,9 @@ float UStudentPerceptor::CalculateItemPriority(AActor* Item, const FVector& Pawn
     const float StaminaPercent = (CurrentStamina / MaxStamina) * 100.0f;
 
     bool bHasWeapon = false;
+    bool bHasMedkit = false;
+    bool bHasFood = false;
+    
     const TArray<ABaseItem*>& Items = InventoryComp->GetInventory();
     for (ABaseItem* InventoryItem : Items)
     {
@@ -570,8 +573,8 @@ float UStudentPerceptor::CalculateItemPriority(AActor* Item, const FVector& Pawn
 
     case EMyItemType::Food:
         if (StaminaPercent < 20.0f) Priority = 700.0f;
-        else if (StaminaPercent < 50.0f) Priority = 400.0f;
-        else Priority = 200.0f;
+        else if (StaminaPercent < 50.0f) Priority = 500.0f;
+        else Priority = 800.0f;
         break;
 
     case EMyItemType::Pistol:

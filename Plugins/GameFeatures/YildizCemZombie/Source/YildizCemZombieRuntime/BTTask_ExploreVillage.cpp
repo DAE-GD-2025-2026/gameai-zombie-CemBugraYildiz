@@ -63,6 +63,15 @@ bool UBTTask_ExploreVillage::ExploreCluster(UBehaviorTreeComponent& OwnerComp,
             if (!KnownItem || !IsValid(KnownItem)) continue;
             ABaseItem* BI = Cast<ABaseItem>(KnownItem);
             if (!BI || BI->GetItemType() == EItemType::Garbage) continue;
+            
+            if (InvComp)
+            {
+                bool bAlreadyGrabbed = false;
+                for (ABaseItem* InvSlot : InvComp->GetInventory())
+                    if (InvSlot == BI) { bAlreadyGrabbed = true; break; }
+                if (bAlreadyGrabbed) continue;
+            }
+
             float DistToCenter = FVector::Dist2D(KnownItem->GetActorLocation(), Cluster->CenterLocation);
             if (DistToCenter <= Cluster->Radius + 600.0f)
             {
@@ -173,7 +182,7 @@ void UBTTask_ExploreVillage::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* 
 
     if (Memory->bJustArrived)
     {
-        if (CurrentTime - Memory->ArrivalTime >= 1.0f)
+        if (CurrentTime - Memory->ArrivalTime >= 0.3f)
         {
             Memory->bJustArrived = false;
             Memory->TargetLocation = FVector::ZeroVector;
@@ -185,7 +194,7 @@ void UBTTask_ExploreVillage::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* 
     }
     else if (Memory->TargetLocation != FVector::ZeroVector)
     {
-        if (!Memory->TargetHouseActor && ExpMemory && ExpMemory->GetClusterCount() > 0)
+        /*if (!Memory->TargetHouseActor && ExpMemory && ExpMemory->GetClusterCount() > 0)
         {
             int32 NearestCluster = ExpMemory->FindNearestUnexploredClusterIndex(PawnLoc);
             if (NearestCluster >= 0)
@@ -195,7 +204,7 @@ void UBTTask_ExploreVillage::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* 
                 Memory->NavStartTime = -1.0f;
                 return;
             }
-        }
+        }*/
         
         float DistToTarget = FVector::Dist2D(PawnLoc, Memory->TargetLocation);
         if (DistToTarget < 200.0f)
