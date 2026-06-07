@@ -49,8 +49,12 @@ EBTNodeResult::Type UBTTask_FleeFromDanger::ExecuteTask(UBehaviorTreeComponent& 
     const FVector PawnLocation = Pawn->GetActorLocation();
     const FVector DangerLocation = DangerActor->GetActorLocation();
     const float CurrentDistance = FVector::Dist(PawnLocation, DangerLocation);
+    
     FFleeTaskMemory* Memory = CastInstanceNodeMemory<FFleeTaskMemory>(NodeMemory);
     Memory->TaskStartTime = GetWorld()->GetTimeSeconds();
+    Memory->bSeekingWeapon = false;
+    Memory->TargetWeapon = nullptr; 
+    
     const float SafeDistance = FleeDistance;
     if (CurrentDistance > SafeDistance)
     {
@@ -64,6 +68,17 @@ EBTNodeResult::Type UBTTask_FleeFromDanger::ExecuteTask(UBehaviorTreeComponent& 
     
     if (bUseSteeringBehavior)
     {
+        if (!BlackboardComp->GetValueAsBool(FName("HasWeapon")))
+        {
+            AActor* KnownWeapon = FindNearestKnownWeapon(Pawn, DangerActor);
+            if (KnownWeapon)
+            {
+                Memory->TargetWeapon  = KnownWeapon;
+                Memory->bSeekingWeapon = true;
+                AIController->MoveToActor(KnownWeapon, FleeWeaponGrabRadius * 0.8f);
+                return EBTNodeResult::InProgress;
+            }
+        }
         FleeUsingSteering(OwnerComp, DangerActor);
         return EBTNodeResult::InProgress;
     }
@@ -152,6 +167,66 @@ void UBTTask_FleeFromDanger::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* 
         UFloatingPawnMovement* MC = Cast<UFloatingPawnMovement>(Pawn->GetMovementComponent());
         if (MC) MC->MaxSpeed = 400.0f;
         FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
+        return;
+    }
+    
+    if (Memory->bSeekingWeapon)
+    {
+        AActor* WeaponActor = Memory->TargetWeapon.Get();
+
+        if (!WeaponActor || !IsValid(WeaponActor))
+         {
+            Memory->bSeekingWeapon = false;
+            AIController->StopMovement();
+            FleeUsingSteering(OwnerComp, DangerActor);
+            return;
+         }
+
+        const FVector PawnLocW  = Pawn->GetActorLocation();
+        const float DistToWeapon = FVector::Dist2D(PawnLocW, WeaponActor->GetActorLocation());
+        const float ZombieDist   = FVector::Dist(PawnLocW, DangerActor->GetActorLocation());
+
+        if (ZombieDist < FleeDistance * 0.35f)
+        {
+            Memory->bSeekingWeapon = false;
+            AIController->StopMovement();
+            FleeUsingSteering(OwnerComp, DangerActor);
+            return;
+        }
+        if (DistToWeapon <= FleeWeaponGrabRadius)
+        {
+            UInventoryComponent* InvComp = Pawn->FindComponentByClass<UInventoryComponent>();
+            ABaseItem* WeaponItem = Cast<ABaseItem>(WeaponActor);
+            if (InvComp && WeaponItem)
+            {
+                int32 EmptySlot = -1;
+                for (int32 i = 0; i < InvComp->GetInventory().Num(); i++)
+                    if (!InvComp->GetInventory()[i]) { EmptySlot = i; break; }
+    
+                if (EmptySlot >= 0 && InvComp->GrabItem(EmptySlot, WeaponItem))
+                {
+                    BB->SetValueAsBool(FName("HasWeapon"), true);
+                    AIController->StopMovement();
+                    UFloatingPawnMovement* MC = Cast<UFloatingPawnMovement>(Pawn->GetMovementComponent());
+                    if (MC) MC->MaxSpeed = 400.0f;
+                    FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
+                    return;
+                }
+            }
+            Memory->bSeekingWeapon = false;
+            AIController->StopMovement();
+            FleeUsingSteering(OwnerComp, DangerActor);
+            return;
+        }
+    
+        if (GetWorld()->GetTimeSeconds() - Memory->TaskStartTime > 15.0f)
+        {
+            Memory->bSeekingWeapon = false;
+            AIController->StopMovement();
+            FleeUsingSteering(OwnerComp, DangerActor);
+            return;
+        }
+    
         return;
     }
 
@@ -254,24 +329,6 @@ void UBTTask_FleeFromDanger::FleeUsingSteering(UBehaviorTreeComponent& OwnerComp
     SteeringComp->AddSteeringBehavior(FleeBehavior);
     SteeringComp->bAutoApplySteering = true;
     SteeringComp->MaxSpeed = 600.0f;
-    
-    UBlackboardComponent* FleeWeaponBB = OwnerComp.GetBlackboardComponent();
-    const bool bHasWeaponFlee = FleeWeaponBB && FleeWeaponBB->GetValueAsBool(FName("HasWeapon"));
-
-    if (!bHasWeaponFlee)
-    {
-        AActor* KnownWeapon = FindNearestKnownWeapon(Pawn, Threat);
-        if (KnownWeapon)
-        {
-            USeekSteering* SeekWeapon = NewObject<USeekSteering>();
-            SeekWeapon->SetTargetActor(KnownWeapon);
-            SeekWeapon->bEnableArrival = false;
-            SeekWeapon->MaxSpeed = 700.0f;
-            SeekWeapon->MaxForce = 900.0f;
-            SeekWeapon->Weight = FleeWeaponSeekWeight;
-            SteeringComp->AddSteeringBehavior(SeekWeapon);
-        }
-    }
 }
 
 AActor* UBTTask_FleeFromDanger::FindNearestSafeHouse(UBlackboardComponent* Blackboard, const FVector& PawnLocation, AActor* Threat) const
@@ -345,6 +402,10 @@ AActor* UBTTask_FleeFromDanger::FindNearestKnownWeapon(APawn* Pawn, AActor* Thre
             continue;
 
         float Dist = FVector::Dist2D(PawnLoc, Item->GetActorLocation());
+        if (Dist > FleeDistance * 1.2f) continue;
+        
+        float DistWeaponToThreat = FVector::Dist2D(Item->GetActorLocation(), ThreatLoc);
+        if (Dist > DistWeaponToThreat) continue;
         if (Dist < MinDist) { MinDist = Dist; Best = Item; }
     }
     return Best;

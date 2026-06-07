@@ -7,6 +7,8 @@
 struct FFleeTaskMemory
 {
 	float TaskStartTime;
+	TWeakObjectPtr<AActor> TargetWeapon;
+	bool bSeekingWeapon;
 };
 
 UCLASS()

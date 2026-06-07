@@ -357,6 +357,15 @@ void UStudentPerceptor::UpdateBlackboard()
 
                 ABaseItem* BaseItem = Cast<ABaseItem>(Item);
                 if (!BaseItem || BaseItem->GetItemType() == EItemType::Garbage) continue;
+                
+                if (BaseItem->GetItemType() == EItemType::Medkit && InventoryComp)
+                {
+                    int32 MedkitCount = 0;
+                    for (ABaseItem* InvItem : InventoryComp->GetInventory())
+                        if (InvItem && InvItem->GetItemType() == EItemType::Medkit)
+                            MedkitCount++;
+                    if (MedkitCount >= 2) continue;
+                }
 
                 bool bInInventory = false;
                 if (InventoryComp)
@@ -538,50 +547,50 @@ float UStudentPerceptor::CalculateItemPriority(AActor* Item, const FVector& Pawn
     const float StaminaPercent = (CurrentStamina / MaxStamina) * 100.0f;
 
     bool bHasWeapon = false;
-    bool bHasMedkit = false;
     bool bHasFood = false;
+    int32 MedkitCount = 0; 
     
     const TArray<ABaseItem*>& Items = InventoryComp->GetInventory();
     for (ABaseItem* InventoryItem : Items)
     {
-        if (InventoryItem)
-        {
-            EItemType Type = InventoryItem->GetItemType();
-            if (Type == EItemType::Pistol || Type == EItemType::Shotgun)
-            {
-                if (InventoryItem->GetValue() > 0)
-                    bHasWeapon = true;
-                break;
-            }
-        }
+        if (!InventoryItem) continue;
+        EItemType InvType = InventoryItem->GetItemType();
+
+        if ((InvType == EItemType::Pistol || InvType == EItemType::Shotgun)
+            && InventoryItem->GetValue() > 0)
+            bHasWeapon = true;
+
+        if (InvType == EItemType::Food)
+            bHasFood = true;
     }
 
     UBlackboardComponent* BB = GetBlackboard();
     const int32 NearbyZombies = BB ? BB->GetValueAsInt(FName("NearbyZombieCount")) : 0;
 
-    float Priority = 0.0f;
+    float Priority;
 
     EMyItemType Type = ClassifyItem(Item);
 
     switch (Type)
     {
     case EMyItemType::Medkit:
-        if (CurrentHealth <= 3) Priority = 1000.0f;      
+        if (CurrentHealth <= 3) Priority = 900.0f;      
         else if (CurrentHealth <= 6) Priority = 500.0f;  
-        else Priority = 100.0f;
+        else Priority = 50.0f;
         break;
 
     case EMyItemType::Food:
-        if (StaminaPercent < 20.0f) Priority = 700.0f;
+        if (!bHasFood) Priority = 1000.0f;
+        else if (StaminaPercent < 20.0f) Priority = 700.0f;
         else if (StaminaPercent < 50.0f) Priority = 500.0f;
         else Priority = 800.0f;
         break;
 
     case EMyItemType::Pistol:
     case EMyItemType::Shotgun:
-        if (!bHasWeapon) Priority = 900.0f;
-        else if (NearbyZombies > 2) Priority = 300.0f;
-        else Priority = 50.0f;
+        if (NearbyZombies > 1 && !bHasWeapon) Priority = 900.0f;
+        else if (!bHasWeapon) Priority = 800.0f;
+        else Priority = 300.0f;
         break;
 
     case EMyItemType::Garbage:
@@ -661,6 +670,15 @@ AActor* UStudentPerceptor::FindBestItem() const
         const float* FailTime = FailedItemCooldowns.Find(BaseItem->GetUniqueID());
         if (FailTime && GetWorld() && GetWorld()->GetTimeSeconds() - *FailTime < 30.0f)
             continue;
+        
+        if (BaseItem->GetItemType() == EItemType::Medkit && InvItems)
+        {
+            int32 MedkitCount = 0;
+            for (ABaseItem* InvItem : *InvItems)
+                if (InvItem && InvItem->GetItemType() == EItemType::Medkit)
+                    MedkitCount++;
+            if (MedkitCount >= 2) continue;
+        }
         
         if (InvItems && InvItems->Contains(BaseItem)) continue;
 
