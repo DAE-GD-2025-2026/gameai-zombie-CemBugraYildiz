@@ -63,67 +63,6 @@ EBTNodeResult::Type UBTTask_FleeFromPurgeZone::ExecuteTask(UBehaviorTreeComponen
         return EBTNodeResult::InProgress;
     }
 
-    FVector FleeDirection = CalculateFleeDirection(PawnLocation, PurgeLocation);
-    FVector TargetLocation = PawnLocation + (FleeDirection * MinSafeDistance * 1.5f);
-
-    UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
-    if (!NavSys)
-    {
-        return EBTNodeResult::Failed;
-    }
-
-    FNavLocation ResultLocation;
-    
-    bool bFoundLocation = NavSys->ProjectPointToNavigation(
-        TargetLocation,
-        ResultLocation,
-        FVector(SearchRadius, SearchRadius, SearchRadius)
-    );
-
-    if (!bFoundLocation)
-    {
-        for (int32 i = 0; i < 8; i++)
-        {
-            float Angle = (360.0f / 8.0f) * i;
-            FVector AlternativeDirection = FleeDirection.RotateAngleAxis(Angle, FVector::UpVector);
-            FVector AlternativeTarget = PawnLocation + (AlternativeDirection * MinSafeDistance);
-            
-            if (NavSys->ProjectPointToNavigation(AlternativeTarget, ResultLocation, FVector(1000.0f)))
-            {
-                if (IsLocationSafeFromPurge(ResultLocation.Location, PurgeZone))
-                {
-                    bFoundLocation = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (bFoundLocation)
-    {
-        EPathFollowingRequestResult::Type MoveResult = AIController->MoveToLocation(
-            ResultLocation.Location,
-            100.0f,
-            true,
-            true,
-            false,
-            true,
-            nullptr,
-            false
-        );
-        
-        if (MoveResult == EPathFollowingRequestResult::RequestSuccessful)
-        {
-            return EBTNodeResult::InProgress;
-        }
-    }
-    FNavLocation RandomLocation;
-    if (NavSys->GetRandomPointInNavigableRadius(PawnLocation, SearchRadius, RandomLocation))
-    {
-        AIController->MoveToLocation(RandomLocation.Location);
-        return EBTNodeResult::InProgress;
-    }
-
     return EBTNodeResult::Failed;
 }
 
@@ -211,22 +150,4 @@ void UBTTask_FleeFromPurgeZone::FleeUsingSteering(UBehaviorTreeComponent& OwnerC
     SteeringComp->AddSteeringBehavior(FleeBehavior);
     SteeringComp->bAutoApplySteering = true;
     SteeringComp->MaxSpeed = 700.0f;
-}
-
-FVector UBTTask_FleeFromPurgeZone::CalculateFleeDirection(const FVector& PawnLocation, const FVector& PurgeLocation) const
-{
-    FVector Direction = (PawnLocation - PurgeLocation);
-    Direction.Z = 0.0f;
-    return Direction.GetSafeNormal();
-}
-
-bool UBTTask_FleeFromPurgeZone::IsLocationSafeFromPurge(const FVector& Location, AActor* PurgeZone) const
-{
-    if (!PurgeZone)
-    {
-        return true;
-    }
-
-    const float Distance = FVector::Dist(Location, PurgeZone->GetActorLocation());
-    return (Distance >= MinSafeDistance);
 }

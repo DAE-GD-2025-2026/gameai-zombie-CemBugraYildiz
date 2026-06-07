@@ -49,15 +49,6 @@ void UBTService_CheckThreats::TickNode(UBehaviorTreeComponent& OwnerComp, uint8*
     bool bShouldFlee = ShouldFleeFromZombies(ZombieCount, NearestZombieDistance, bHasWeapon, CurrentAmmo, CurrentHealth);
 
     BlackboardComp->SetValueAsBool(FName("ShouldFlee"), bShouldFlee);
-
-    if (bShouldFlee)
-    {
-        BlackboardComp->SetValueAsBool(FName("IsInDanger"), true);
-    }
-    else if (ZombieCount == 0)
-    {
-        BlackboardComp->SetValueAsBool(FName("IsInDanger"), false);
-    }
 }
 
 bool UBTService_CheckThreats::ShouldFleeFromZombies(int32 ZombieCount, float NearestZombieDistance, bool bHasWeapon, int32 CurrentAmmo, int32 CurrentHealth) const

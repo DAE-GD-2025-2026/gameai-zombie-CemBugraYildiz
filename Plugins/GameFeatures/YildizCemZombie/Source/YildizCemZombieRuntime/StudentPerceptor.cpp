@@ -764,42 +764,6 @@ AActor* UStudentPerceptor::FindNearestPurgeZone() const
     return NearestPurge;
 }
 
-AActor* UStudentPerceptor::FindNearestZombie() const
-{
-    if (PerceivedZombies.Num() == 0)
-    {
-        return nullptr;
-    }
-
-    APawn* OwnerPawn = Cast<APawn>(GetOwner());
-    if (!OwnerPawn)
-    {
-        return nullptr;
-    }
-
-    const FVector PawnLocation = OwnerPawn->GetActorLocation();
-    
-    AActor* NearestZombie = nullptr;
-    float MinDistance = FLT_MAX;
-
-    for (AActor* Zombie : PerceivedZombies)
-    {
-        if (!Zombie)
-        {
-            continue;
-        }
-
-        const float Distance = FVector::Dist(PawnLocation, Zombie->GetActorLocation());
-        if (Distance < MinDistance)
-        {
-            MinDistance = Distance;
-            NearestZombie = Zombie;
-        }
-    }
-
-    return NearestZombie;
-}
-
 UBlackboardComponent* UStudentPerceptor::GetBlackboard() const
 {
     APawn* OwnerPawn = Cast<APawn>(GetOwner());

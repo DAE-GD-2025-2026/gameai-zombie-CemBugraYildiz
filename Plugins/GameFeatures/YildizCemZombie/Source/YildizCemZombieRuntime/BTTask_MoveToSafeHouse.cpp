@@ -87,8 +87,6 @@ void UBTTask_MoveToSafeHouse::TickTask(UBehaviorTreeComponent& OwnerComp, uint8*
 
     if (IsInsideHouse(Pawn, SafeHouse))
     {
-        BB->SetValueAsBool(FName("IsInsideHouse"), true);
-        BB->SetValueAsBool(FName("IsInDanger"), false);
         FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
     }
 }

@@ -91,7 +91,6 @@ protected:
     
 	class UBlackboardComponent* GetBlackboard() const;
     
-	AActor* FindNearestZombie() const;
 	AActor* FindMostDangerousZombie() const;
 	AActor* FindBestItem() const;
 	AActor* FindNearestHouse() const;

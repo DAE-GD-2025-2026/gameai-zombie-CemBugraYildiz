@@ -46,8 +46,4 @@ public:
 private:
 	float WanderStartTime = 0.0f;
 	void ExploreUsingWander(UBehaviorTreeComponent& OwnerComp);
-	
-	FVector FindClusterBasedExploration(UBehaviorTreeComponent& OwnerComp, const FVector& CurrentLocation);
-	FVector FindLeastVisitedDirection(UBehaviorTreeComponent& OwnerComp, const FVector& CurrentLocation);
-	bool IsLocationSuitableForExploration(class UExplorationMemory* Memory, const FVector& Location);
 };

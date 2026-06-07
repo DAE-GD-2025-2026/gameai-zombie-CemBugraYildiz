@@ -28,8 +28,5 @@ public:
 	bool bUseSteeringBehavior = true;
 
 private:
-	FVector CalculateFleeDirection(const FVector& PawnLocation, const FVector& PurgeLocation) const;
-	bool IsLocationSafeFromPurge(const FVector& Location, AActor* PurgeZone) const;
-	
 	void FleeUsingSteering(UBehaviorTreeComponent& OwnerComp, AActor* PurgeZone);
 };

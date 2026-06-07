@@ -83,17 +83,6 @@ EBTNodeResult::Type UBTTask_GrabItem::ExecuteTask(UBehaviorTreeComponent& OwnerC
         
         if (bSuccess)
         {
-            FString ItemTypeName;
-            switch (Item->GetItemType())
-            {
-                case EItemType::Medkit: ItemTypeName = TEXT("Medkit"); break;
-                case EItemType::Food: ItemTypeName = TEXT("Food"); break;
-                case EItemType::Pistol: ItemTypeName = TEXT("Pistol"); break;
-                case EItemType::Shotgun: ItemTypeName = TEXT("Shotgun"); break;
-                default: ItemTypeName = TEXT("Unknown"); break;
-            }
-            
-            
             BlackboardComp->ClearValue(FName("BestItem"));
             return EBTNodeResult::Succeeded;
         }

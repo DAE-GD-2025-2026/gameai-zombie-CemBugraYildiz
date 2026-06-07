@@ -301,9 +301,6 @@ void UBTTask_AttackTarget::FireWeapon(APawn* Pawn, AActor* Target) const
     
 	if (bUsed)
 	{
-		FString WeaponType = EquippedWeapon->GetClass()->GetName();
-		int32 RemainingAmmo = EquippedWeapon->GetValue();
-		
 		if (EquippedWeapon->GetValue() == 0)
 			InventoryComp->RemoveItem(WeaponSlot);
 	}
